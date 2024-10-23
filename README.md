@@ -7,7 +7,7 @@ The **Network Traffic analyser** is a terminal-based tool designed to capture an
 - **Protocol-based filtering**: Easily filter packets based on TCP, UDP, ICMP protocols.
 - **Port-based filtering**: Focus on specific port traffic to narrow down your analysis.
 - **Real-time packet capture**: Capture and display network traffic live from your terminal.
-- **Customizable terminal interface**: Built for ease of use with an ASCII art-driven UI to enhance the user experience.
+- **Customisable terminal interface**: Built for ease of use with an ASCII art-driven UI to enhance the user experience.
 
 ## Requirements
 Ensure you have the following installed:
