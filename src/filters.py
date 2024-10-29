@@ -67,12 +67,12 @@ def set_filter():
                 # Handle port input display
                 port_display = selected_port if selected_port else "none"
                 prefix = "-->" if current_selection == i else "   "
-                print(f"{prefix} Port: {port_display}")
+                print(Fore.GREEN + f"{prefix} Port: {port_display}" + Style.RESET_ALL)
             else:
                 protocol = option.lower()
                 selected = "x" if selected_protocols[protocol] else "none"
                 prefix = "-->" if current_selection == i else "   "
-                print(f"{prefix} {option}: {selected}")
+                print(Fore.GREEN + f"{prefix} {option}: {selected}" + Style.RESET_ALL)
 
         key = get_keypress()
 
