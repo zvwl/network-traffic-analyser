@@ -17,7 +17,7 @@ def display_ascii_art():
 ███████║██║ ╚████║██║██║     ██║     ███████╗██║  ██║       ██║   ╚██████╔╝╚██████╔╝███████╗
 ╚══════╝╚═╝  ╚═══╝╚═╝╚═╝     ╚═╝     ╚══════╝╚═╝  ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝
     """
-    print(Fore.MAGENTA + art + Style.RESET_ALL)
+    print(Fore.GREEN + art + Style.RESET_ALL)
 
 # Function to capture filtered network traffic
 def capture_filtered_traffic():
