@@ -5,8 +5,7 @@ from src.utils import get_keypress, glowing_text, loading_spinner
 from src.filters import capture_filtered_traffic, set_filter
 
 
-def display_ascii_art():
-    art = text2art("Net Analyser")
+def display_ascii_art(art):
     print(Fore.GREEN + art + Style.RESET_ALL)
 
 # Terminal UI with arrow navigation
@@ -14,9 +13,20 @@ def terminal_ui():
     options = ["Start Network Traffic Analysis", "Set Filter", "Exit"]
     current_selection = 0
 
+    # Custom ASCII art
+    custom_art = """
+███████╗███╗   ██╗██╗███████╗███████╗███████╗██████╗     ████████╗ ██████╗  ██████╗ ██╗     
+██╔════╝████╗  ██║██║██╔════╝██╔════╝██╔════╝██╔══██╗    ╚══██╔══╝██╔═══██╗██╔═══██╗██║     
+███████╗██╔██╗ ██║██║█████╗  █████╗  █████╗  ██████╔╝       ██║   ██║   ██║██║   ██║██║     
+╚════██║██║╚██╗██║██║██╔══╝  ██╔══╝  ██╔══╝  ██╔══██╗       ██║   ██║   ██║██║   ██║██║     
+███████║██║ ╚████║██║██║     ██║     ███████╗██║  ██║       ██║   ╚██████╔╝╚██████╔╝███████╗
+╚══════╝╚═╝  ╚═══╝╚═╝╚═╝     ╚═╝     ╚══════╝╚═╝  ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝
+                                                                                            
+    """
+
     while True:
         os.system('clear')  # Clear the terminal for a fresh UI display
-        display_ascii_art()
+        display_ascii_art(custom_art)
         print(Fore.GREEN + "Welcome to the Network Traffic Analyser!\n" + Style.RESET_ALL)
 
         # Display the menu with the current selection highlighted with an arrow
