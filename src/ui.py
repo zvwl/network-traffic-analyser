@@ -32,7 +32,7 @@ def terminal_ui():
         # Display the menu with the current selection highlighted with an arrow
         for i, option in enumerate(options):
             if i == current_selection:
-                print(Fore.GREEN + f"--> {option}" + Style.RESET_ALL)  # Highlight the current selection in hacker green
+                print(Fore.YELLOW + f"--> {option}" + Style.RESET_ALL)  # Highlight the current selection in yellow
             else:
                 print(Fore.GREEN + f"    {option}" + Style.RESET_ALL)
 
