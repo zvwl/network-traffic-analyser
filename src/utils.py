@@ -36,3 +36,34 @@ def glowing_text(text, iterations=5):
         print(Fore.LIGHTGREEN_EX + text + Style.RESET_ALL, end='\r')
         time.sleep(0.5)
     print()  # Add a newline after the glowing effect is done
+
+def get_duration_input():
+    while True:
+        try:
+            duration = int(input(Fore.GREEN + "Enter capture duration in seconds: " + Style.RESET_ALL))
+            if duration > 0:
+                return duration
+            else:
+                print(Fore.RED + "Please enter a positive number." + Style.RESET_ALL)
+        except ValueError:
+            print(Fore.RED + "Invalid input. Please enter a number." + Style.RESET_ALL)
+
+def get_ip_input():
+    while True:
+        ip = input(Fore.GREEN + "Enter IP address to filter: " + Style.RESET_ALL)
+        if ip:
+            return ip
+        else:
+            print(Fore.RED + "Invalid input. Please enter a valid IP address." + Style.RESET_ALL)
+
+def get_packet_size_range():
+    while True:
+        try:
+            min_size = int(input(Fore.GREEN + "Enter minimum packet size (bytes): " + Style.RESET_ALL))
+            max_size = int(input(Fore.GREEN + "Enter maximum packet size (bytes): " + Style.RESET_ALL))
+            if min_size > 0 and max_size > min_size:
+                return min_size, max_size
+            else:
+                print(Fore.RED + "Invalid input. Please enter positive numbers with max size greater than min size." + Style.RESET_ALL)
+        except ValueError:
+            print(Fore.RED + "Invalid input. Please enter numbers." + Style.RESET_ALL)

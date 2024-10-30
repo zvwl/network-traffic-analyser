@@ -48,7 +48,6 @@ def terminal_ui():
             if current_selection == 0:
                 # Start packet capture with spinner before it starts
                 capture_filtered_traffic()
-                break
             elif current_selection == 1:
                 # Set filters
                 set_filter()
