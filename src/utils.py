@@ -2,7 +2,10 @@ import sys
 import termios
 import tty
 import time
+
 from colorama import Fore, Style
+from scapy.all import IP, TCP, UDP
+
 
 def loading_spinner(text, duration=5):
     spinner = ['-', '\\', '|', '/']
@@ -67,3 +70,37 @@ def get_packet_size_range():
                 print(Fore.RED + "Invalid input. Please enter positive numbers with max size greater than min size." + Style.RESET_ALL)
         except ValueError:
             print(Fore.RED + "Invalid input. Please enter numbers." + Style.RESET_ALL)
+
+def detect_anomaly(packet):
+    """Detect anomalies in packet based on size, uncommon protocols, and IP range criteria."""
+    if IP not in packet:
+        return False  # Ignore packets without IP layer
+
+    ip_layer = packet[IP]
+    src_ip = ip_layer.src
+    dst_ip = ip_layer.dst
+    protocol = "TCP" if TCP in packet else "UDP" if UDP in packet else "Other"
+    packet_size = len(packet)
+    is_anomalous = False
+
+    # Rule 1: Detect uncommon protocols
+    if protocol == "Other" and not packet.haslayer('ICMP'):
+        print(Fore.YELLOW + f"Anomaly detected: Uncommon protocol in packet from {src_ip} to {dst_ip}" + Style.RESET_ALL)
+        is_anomalous = True
+
+    # Rule 2: Detect large packets (> 1400 bytes as threshold)
+    if packet_size > 1400:
+        print(Fore.YELLOW + f"Anomaly detected: Large packet size ({packet_size} bytes) from {src_ip} to {dst_ip}" + Style.RESET_ALL)
+        is_anomalous = True
+
+    # Rule 3: Check public IP ranges and IP range mismatches
+    private_ip_prefixes = ["192.168.", "10.", "172.16."]
+    def is_private(ip):
+        return any(ip.startswith(prefix) for prefix in private_ip_prefixes)
+
+    # Anomaly if both IPs are outside private ranges, but avoid flagging if private-public IP interaction
+    if not (is_private(src_ip) or is_private(dst_ip)) and not (is_private(src_ip) != is_private(dst_ip)):
+        print(Fore.YELLOW + f"Anomaly detected: Unusual IP range in packet from {src_ip} to {dst_ip}" + Style.RESET_ALL)
+        is_anomalous = True
+
+    return is_anomalous

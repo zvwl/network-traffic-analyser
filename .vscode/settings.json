@@ -1,0 +1,11 @@
+{
+    "python.analysis.extraPaths": [
+        "./tests/test.",
+        "./tests/test."
+    ],
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
+}

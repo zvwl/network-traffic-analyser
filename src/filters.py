@@ -2,13 +2,15 @@ import os
 from scapy.all import sniff, IP, TCP, UDP
 from colorama import Fore, Style
 from src.utils import loading_spinner, get_keypress, get_duration_input, get_ip_input, get_packet_size_range
+from src.utils import detect_anomaly
 
 # Global filter variables
 selected_protocols = {"tcp": False, "udp": False, "icmp": False}
 selected_port = None
 selected_duration = None
-selected_ip = None  # Add global variable for IP address
-selected_packet_size_range = None  # Add global variable for packet size range
+selected_ip = None  
+selected_packet_size_range = None
+enable_anomaly_detection = False
 
 # ASCII Art Title
 def display_ascii_art():
@@ -24,7 +26,7 @@ def display_ascii_art():
 
 # Function to capture filtered network traffic
 def capture_filtered_traffic():
-    global selected_protocols, selected_port, selected_duration, selected_ip, selected_packet_size_range
+    global selected_protocols, selected_port, selected_duration, selected_ip, selected_packet_size_range, enable_anomaly_detection
 
     # Build filter expression based on user selection
     protocol_filters = []
@@ -68,22 +70,21 @@ def packet_callback(packet):
         src_ip = ip_layer.src  # Source IP
         dst_ip = ip_layer.dst  # Destination IP
 
-        # Check for TCP or UDP protocol
-        if TCP in packet:
-            protocol = "TCP"
-        elif UDP in packet:
-            protocol = "UDP"
-        else:
-            protocol = "Other"
+        # Determine protocol
+        protocol = "TCP" if TCP in packet else "UDP" if UDP in packet else "Other"
 
-        # Print out details of each packet in hacker green
+        # Print packet details
         print(Fore.GREEN + f"[+] Packet: {src_ip} -> {dst_ip} | Protocol: {protocol}" + Style.RESET_ALL)
+
+        # Run anomaly detection if enabled
+        if enable_anomaly_detection and detect_anomaly(packet):
+            print(Fore.RED + "[!] Anomaly detected!" + Style.RESET_ALL)
 
 # Function to display dynamic checklist for filter selection
 def set_filter():
-    global selected_protocols, selected_port, selected_duration, selected_ip, selected_packet_size_range
+    global selected_protocols, selected_port, selected_duration, selected_ip, selected_packet_size_range, enable_anomaly_detection
 
-    options = ["TCP", "UDP", "ICMP", "Port", "Duration", "IP Address", "Packet Size Range", "Back"]
+    options = ["TCP", "UDP", "ICMP", "Port", "Duration", "IP Address", "Packet Size Range", "Anomaly Detection", "Back"]
     current_selection = 0
 
     while True:
@@ -114,6 +115,11 @@ def set_filter():
                 prefix = "-->" if current_selection == i else "   "
                 color = Fore.YELLOW if current_selection == i else Fore.GREEN
                 print(color + f"{prefix} Packet Size Range: {size_display}" + Style.RESET_ALL)
+            elif option == "Anomaly Detection":
+                anomaly_display = "✅" if enable_anomaly_detection else "❌"
+                prefix = "-->" if current_selection == i else "   "
+                color = Fore.YELLOW if current_selection == i else Fore.GREEN
+                print(color + f"{prefix} Anomaly Detection: {anomaly_display}" + Style.RESET_ALL)
             elif option == "Back":
                 # Display "Back" option at the end
                 prefix = "-->" if current_selection == i else "   "
@@ -143,6 +149,8 @@ def set_filter():
                 selected_ip = get_ip_input()
             elif current_selection == 6:  # Packet Size Range input selected
                 selected_packet_size_range = get_packet_size_range()
+            elif current_selection == 7:  # Anomaly Detection toggle
+                enable_anomaly_detection = not enable_anomaly_detection
             else:  # Toggle TCP, UDP, or ICMP
                 protocol = options[current_selection].lower()
                 selected_protocols[protocol] = not selected_protocols[protocol]
