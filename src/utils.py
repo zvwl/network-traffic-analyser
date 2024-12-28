@@ -3,8 +3,9 @@ import termios
 import tty
 import time
 
-from colorama import Fore, Style
 from scapy.all import IP, TCP, UDP
+from colorama import Fore, Style
+
 
 
 def loading_spinner(text, duration=5):
@@ -72,35 +73,50 @@ def get_packet_size_range():
             print(Fore.RED + "Invalid input. Please enter numbers." + Style.RESET_ALL)
 
 def detect_anomaly(packet):
-    """Detect anomalies in packet based on size, uncommon protocols, and IP range criteria."""
+    """Detect anomalies in a packet with refined rules."""
     if IP not in packet:
-        return False  # Ignore packets without IP layer
+        return False  # Ignore packets without an IP layer
 
     ip_layer = packet[IP]
     src_ip = ip_layer.src
     dst_ip = ip_layer.dst
-    protocol = "TCP" if TCP in packet else "UDP" if UDP in packet else "Other"
+    protocol = "TCP" if TCP in packet else "UDP" if UDP in packet else packet.payload.name if hasattr(packet.payload, "name") else "Other"
     packet_size = len(packet)
     is_anomalous = False
 
-    # Rule 1: Detect uncommon protocols
-    if protocol == "Other" and not packet.haslayer('ICMP'):
-        print(Fore.YELLOW + f"Anomaly detected: Uncommon protocol in packet from {src_ip} to {dst_ip}" + Style.RESET_ALL)
-        is_anomalous = True
-
-    # Rule 2: Detect large packets (> 1400 bytes as threshold)
-    if packet_size > 1400:
-        print(Fore.YELLOW + f"Anomaly detected: Large packet size ({packet_size} bytes) from {src_ip} to {dst_ip}" + Style.RESET_ALL)
-        is_anomalous = True
-
-    # Rule 3: Check public IP ranges and IP range mismatches
-    private_ip_prefixes = ["192.168.", "10.", "172.16."]
+    # Define private IP ranges
+    private_ip_prefixes = ["192.168.", "10.", "172.16.", "172.17.", "172.18.", "172.19.",
+                           "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+                           "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31."]
     def is_private(ip):
         return any(ip.startswith(prefix) for prefix in private_ip_prefixes)
 
-    # Anomaly if both IPs are outside private ranges, but avoid flagging if private-public IP interaction
-    if not (is_private(src_ip) or is_private(dst_ip)) and not (is_private(src_ip) != is_private(dst_ip)):
-        print(Fore.YELLOW + f"Anomaly detected: Unusual IP range in packet from {src_ip} to {dst_ip}" + Style.RESET_ALL)
+    # Rule 1: Ignore typical multicast or broadcast traffic
+    if dst_ip.startswith("224.") or dst_ip == "255.255.255.255":
+        return False
+
+    # Rule 2: Detect large packets
+    size_threshold = 1300  # Threshold for large packets
+    if packet_size > size_threshold:
+        print(Fore.YELLOW + f"Anomaly detected: Large packet ({packet_size} bytes) from {src_ip} to {dst_ip}" + Style.RESET_ALL)
         is_anomalous = True
+
+    # Rule 3: Detect uncommon protocols
+    common_protocols = {"TCP", "UDP", "ICMP"}
+    if protocol not in common_protocols:
+        print(Fore.YELLOW + f"Anomaly detected: Uncommon protocol '{protocol}' in packet from {src_ip} to {dst_ip}" + Style.RESET_ALL)
+        is_anomalous = True
+
+    # Rule 4: Public-to-public communication
+    src_is_private = is_private(src_ip)
+    dst_is_private = is_private(dst_ip)
+    if not src_is_private and not dst_is_private:
+        print(Fore.YELLOW + f"Anomaly detected: Public-to-public communication from {src_ip} to {dst_ip}" + Style.RESET_ALL)
+        is_anomalous = True
+
+    # Rule 5: Whitelist trusted public IPs
+    trusted_ips = {"20.190.159.4", "3.233.158.24", "3.233.158.25", "192.168.1.106", "192.168.1.105"}
+    if dst_ip in trusted_ips or src_ip in trusted_ips:
+        return is_anomalous  # Trusted IPs should still return current status
 
     return is_anomalous
