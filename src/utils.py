@@ -73,7 +73,6 @@ def get_packet_size_range():
             print(Fore.RED + "Invalid input. Please enter numbers." + Style.RESET_ALL)
 
 def detect_anomaly(packet):
-    """Detect anomalies in a packet with refined rules."""
     if IP not in packet:
         return False  # Ignore packets without an IP layer
 
@@ -93,30 +92,32 @@ def detect_anomaly(packet):
 
     # Rule 1: Ignore typical multicast or broadcast traffic
     if dst_ip.startswith("224.") or dst_ip == "255.255.255.255":
+        print(Fore.YELLOW + f"Ignored multicast/broadcast traffic: {src_ip} -> {dst_ip}" + Style.RESET_ALL)
         return False
 
-    # Rule 2: Detect large packets
-    size_threshold = 1300  # Threshold for large packets
+    # Rule 2: Trusted IPs
+    trusted_ips = {"20.190.159.4", "3.233.158.24", "3.233.158.25", "192.168.1.106", "192.168.1.105"}
+
+    # Rule 3: Detect large packets
+    size_threshold = 1500  # Threshold for large packets
     if packet_size > size_threshold:
         print(Fore.YELLOW + f"Anomaly detected: Large packet ({packet_size} bytes) from {src_ip} to {dst_ip}" + Style.RESET_ALL)
         is_anomalous = True
 
-    # Rule 3: Detect uncommon protocols
+    # Rule 4: Detect uncommon protocols
     common_protocols = {"TCP", "UDP", "ICMP"}
     if protocol not in common_protocols:
         print(Fore.YELLOW + f"Anomaly detected: Uncommon protocol '{protocol}' in packet from {src_ip} to {dst_ip}" + Style.RESET_ALL)
         is_anomalous = True
 
-    # Rule 4: Public-to-public communication
+    # Rule 5: Public-to-public communication (skip this rule for trusted IPs)
     src_is_private = is_private(src_ip)
     dst_is_private = is_private(dst_ip)
     if not src_is_private and not dst_is_private:
-        print(Fore.YELLOW + f"Anomaly detected: Public-to-public communication from {src_ip} to {dst_ip}" + Style.RESET_ALL)
-        is_anomalous = True
-
-    # Rule 5: Whitelist trusted public IPs
-    trusted_ips = {"20.190.159.4", "3.233.158.24", "3.233.158.25", "192.168.1.106", "192.168.1.105"}
-    if dst_ip in trusted_ips or src_ip in trusted_ips:
-        return is_anomalous  # Trusted IPs should still return current status
+        if dst_ip in trusted_ips or src_ip in trusted_ips:
+            print(Fore.YELLOW + f"Trusted public-to-public traffic: {src_ip} -> {dst_ip}" + Style.RESET_ALL)
+        else:
+            print(Fore.YELLOW + f"Anomaly detected: Public-to-public communication from {src_ip} to {dst_ip}" + Style.RESET_ALL)
+            is_anomalous = True
 
     return is_anomalous

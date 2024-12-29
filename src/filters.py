@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from scapy.all import sniff, wrpcap, IP, TCP, UDP, ICMPv6NDOptUnknown, DNS, Raw
 from scapy.layers.http import HTTPRequest, HTTPResponse
 from colorama import Fore, Style
@@ -28,18 +29,38 @@ def display_ascii_art():
     """
     print(Fore.GREEN + art + Style.RESET_ALL)
 
-# Function to capture filtered network traffic
 def capture_filtered_traffic(output_pcap="traffic_capture.pcap", output_json="traffic_capture.json"):
-    global selected_protocols, selected_port, selected_duration, selected_ip, selected_packet_size_range, enable_anomaly_detection, captured_packets
+    global selected_protocols, selected_port, selected_duration, selected_ip, selected_packet_size_range, captured_packets, stop_capture
 
-    # Build filter expression based on user selection
+    stop_capture = False  # Reset the stop flag
+
+    # Clear previous captured packets
+    captured_packets = []
+
+    # Remove old output files
+    if os.path.exists(output_json):
+        os.remove(output_json)
+    if os.path.exists(output_pcap):
+        os.remove(output_pcap)
+
+    # Build the filter string based on selected options
     protocol_filters = []
-    other_filters = []
-
     for protocol, selected in selected_protocols.items():
         if selected:
-            protocol_filters.append(protocol)
+            if protocol == "icmp":
+                protocol_filters.append("icmp")
+            elif protocol == "icmpv6":
+                protocol_filters.append("ip6 proto 58")
+            elif protocol == "mdns":
+                protocol_filters.append("udp port 5353")
+            elif protocol == "http":
+                protocol_filters.append("tcp port 80 or tcp port 443")
+            elif protocol == "ntp":
+                protocol_filters.append("udp port 123")
+            elif protocol in ["tcp", "udp"]:
+                protocol_filters.append(protocol)
 
+    other_filters = []
     if selected_port:
         other_filters.append(f"port {selected_port}")
     if selected_ip:
@@ -53,46 +74,44 @@ def capture_filtered_traffic(output_pcap="traffic_capture.pcap", output_json="tr
 
     filter_str = " and ".join(filter for filter in [protocol_str, other_str] if filter)
 
-    print(Fore.GREEN + f"Starting network traffic capture for {selected_duration} seconds with filter: {filter_str or 'None'}..." + Style.RESET_ALL)
-
-    # Add loading spinner to simulate preparation for capturing
-    loading_spinner("Preparing for packet capture", 3)
+    print(Fore.GREEN + f"Starting capture with filter: {filter_str or 'None'}" + Style.RESET_ALL)
 
     try:
-        # Capture traffic
-        sniff(filter=filter_str, prn=packet_callback, timeout=selected_duration)
+        sniff(
+            filter=filter_str,
+            prn=packet_callback,
+            timeout=selected_duration,
+            stop_filter=lambda _: stop_capture,
+        )
     except KeyboardInterrupt:
-        print(Fore.GREEN + "\n[+] Stopping packet capture..." + Style.RESET_ALL)
-    except Exception as e:
-        print(Fore.RED + f"Error: {e}" + Style.RESET_ALL)
+        print(Fore.YELLOW + "\nCapture stopped by user. Finalizing..." + Style.RESET_ALL)
+        stop_capture = True  # Prevent further packet processing
     finally:
-        # Save captured packets to PCAP
-        print(Fore.GREEN + f"Saving captured traffic to {output_pcap}..." + Style.RESET_ALL)
-        wrpcap(output_pcap, [pkt for pkt, _ in captured_packets])
+        save_captured_packets()
+        print(Fore.GREEN + "Capture saved successfully!" + Style.RESET_ALL)
+        time.sleep(3)  # Delay for better visibility of the finalization message
 
-        # Save captured packets to JSON
-        print(Fore.GREEN + f"Saving captured traffic to {output_json}..." + Style.RESET_ALL)
-        with open(output_json, "w") as json_file:
-            json.dump([packet_to_dict(pkt_tuple) for pkt_tuple in captured_packets], json_file, indent=4)
 
-        print(Fore.GREEN + "Traffic saved successfully!" + Style.RESET_ALL)
-        input(Fore.GREEN + "Press Enter to return to the main menu..." + Style.RESET_ALL)
-
+stop_capture = False  # Global flag to stop processing
 
 def packet_callback(packet):
-    global captured_packets
-    protocol = "Other"
+    global captured_packets, stop_capture
 
+    # Ignore packets if stop_capture is True
+    if stop_capture:
+        return
+
+    protocol = "Other"
     if IP in packet:
         protocol = "TCP" if TCP in packet else "UDP" if UDP in packet else "IP"
     elif ICMPv6NDOptUnknown in packet:
         protocol = "ICMPv6"
-    elif DNS in packet:
+    elif DNS in packet and ("5353" in packet.summary()):
         protocol = "MDNS"
     elif HTTPRequest in packet or HTTPResponse in packet:
         protocol = "HTTP"
-    elif Raw in packet:  # Heuristic for NTP
-        protocol = "NTP" if "ntp" in packet.summary().lower() else "Other"
+    elif Raw in packet and "ntp" in packet.summary().lower():
+        protocol = "NTP"
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     src_ip = packet[IP].src if IP in packet else "Unknown"
@@ -100,34 +119,49 @@ def packet_callback(packet):
     packet_length = len(packet)
     packet_info = packet.summary()
 
-    print(Fore.GREEN + f"[+] {timestamp} | {src_ip} -> {dst_ip} | Protocol: {protocol} | Length: {packet_length} | Info: {packet_info}" + Style.RESET_ALL)
+    print(Fore.GREEN + f"[+] {timestamp} | {src_ip} -> {dst_ip} | Protocol: {protocol} | Length: {packet_length} bytes | Info: {packet_info}" + Style.RESET_ALL)
 
-    is_anomalous = enable_anomaly_detection and detect_anomaly(packet)
+    # Only detect anomalies if enabled and stop_capture is False
+    is_anomalous = False
+    if enable_anomaly_detection and not stop_capture:
+        is_anomalous = detect_anomaly(packet)
+        if is_anomalous:
+            print(Fore.RED + f"Anomaly detected in packet: {src_ip} -> {dst_ip} | Protocol: {protocol} | Length: {packet_length} bytes" + Style.RESET_ALL)
 
     captured_packets.append((packet, is_anomalous))
 
-    if is_anomalous:
-        print(Fore.RED + "[!] Anomaly detected!" + Style.RESET_ALL)
 
 
-def packet_to_dict(packet_tuple):
-    """
-    Convert a Scapy packet to a dictionary format suitable for JSON serialization,
-    including anomaly information.
-    """
-    packet, is_anomalous = packet_tuple
+def save_captured_packets(output_pcap="traffic_capture.pcap", output_json="traffic_capture.json"):
+    try:
+
+        # Prepare valid packets
+        valid_packets = [pkt for pkt, _ in captured_packets if pkt is not None]
+
+        if valid_packets:
+            print(Fore.GREEN + f"Saving to {output_pcap}..." + Style.RESET_ALL)
+            wrpcap(output_pcap, valid_packets)
+
+            print(Fore.GREEN + f"Saving to {output_json}..." + Style.RESET_ALL)
+            with open(output_json, "w") as json_file:
+                json.dump([packet_to_dict(pkt) for pkt in valid_packets], json_file, indent=4)
+
+        else:
+            print(Fore.RED + "No valid packets to save." + Style.RESET_ALL)
+    except Exception as e:
+        print(Fore.RED + f"Error during saving packets: {e}" + Style.RESET_ALL)
+
+# Helper function to convert a packet to dictionary
+def packet_to_dict(packet):
+    is_anomalous = detect_anomaly(packet)  # Determine if the packet is anomalous
     return {
         "src_ip": packet[IP].src if IP in packet else None,
         "dst_ip": packet[IP].dst if IP in packet else None,
-        "protocol": "TCP" if TCP in packet else "UDP" if UDP in packet else \
-                    "ICMPv6" if ICMPv6NDOptUnknown in packet else "MDNS" if DNS in packet else \
-                    "HTTP" if HTTPRequest in packet or HTTPResponse in packet else "NTP" if Raw in packet and "ntp" in packet.summary().lower() else "Other",
+        "protocol": "TCP" if TCP in packet else "UDP" if UDP in packet else "ICMPv6" if ICMPv6NDOptUnknown in packet else "MDNS" if DNS in packet and "5353" in packet.summary() else "HTTP" if HTTPRequest in packet or HTTPResponse in packet else "NTP" if Raw in packet and "ntp" in packet.summary().lower() else "Other",
         "size": len(packet),
         "info": str(packet.summary()),
-        "anomalous": is_anomalous
+        "is_anomalous": is_anomalous  # Add anomaly flag
     }
-
-
 
 
 def set_filter():

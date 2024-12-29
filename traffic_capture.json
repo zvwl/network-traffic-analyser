@@ -1,0 +1,138 @@
+[
+    {
+        "src_ip": "192.168.1.110",
+        "dst_ip": "224.0.0.251",
+        "protocol": "UDP",
+        "size": 154,
+        "info": "Ether / IP / UDP / mDNS Qry b'Dan Iphone 7 ._rdlink._tcp.local.'",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": null,
+        "dst_ip": null,
+        "protocol": "UDP",
+        "size": 275,
+        "info": "Ether / IPv6 / UDP / mDNS Qry b'B756E7CA-F547-4F7A-A0D7-3ADC12AE9A87._remotepairing._tcp.local.'",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": null,
+        "dst_ip": null,
+        "protocol": "UDP",
+        "size": 430,
+        "info": "Ether / IPv6 / UDP / mDNS Ans b'iPhone.local.'",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": null,
+        "dst_ip": null,
+        "protocol": "UDP",
+        "size": 227,
+        "info": "Ether / IPv6 / UDP / mDNS Qry b'Dan-Iphone-7.local.'",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": "192.168.1.104",
+        "dst_ip": "224.0.0.251",
+        "protocol": "UDP",
+        "size": 255,
+        "info": "Ether / IP / UDP / mDNS Qry b'B756E7CA-F547-4F7A-A0D7-3ADC12AE9A87._remotepairing._tcp.local.'",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": "192.168.1.104",
+        "dst_ip": "224.0.0.251",
+        "protocol": "UDP",
+        "size": 410,
+        "info": "Ether / IP / UDP / mDNS Ans b'iPhone.local.'",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": "192.168.1.110",
+        "dst_ip": "224.0.0.251",
+        "protocol": "UDP",
+        "size": 207,
+        "info": "Ether / IP / UDP / mDNS Qry b'Dan-Iphone-7.local.'",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": null,
+        "dst_ip": null,
+        "protocol": "UDP",
+        "size": 319,
+        "info": "Ether / IPv6 / UDP / mDNS Ans [b'rpBA=C0:D2:0F:E5:04:28', b'rpVr=360.4', b'rpAD=bcbaa32c62b7']",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": "192.168.1.110",
+        "dst_ip": "224.0.0.251",
+        "protocol": "UDP",
+        "size": 299,
+        "info": "Ether / IP / UDP / mDNS Ans [b'rpBA=C0:D2:0F:E5:04:28', b'rpVr=360.4', b'rpAD=bcbaa32c62b7']",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": null,
+        "dst_ip": null,
+        "protocol": "UDP",
+        "size": 456,
+        "info": "Ether / IPv6 / UDP / mDNS Ans [b'identifier=B756E7CA-F547-4F7A-A0D7-3ADC12AE9A87', b'authTag=uDpg4Ii2', b'ver=22', b'minVer=8', b'flags=0']",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": null,
+        "dst_ip": null,
+        "protocol": "UDP",
+        "size": 227,
+        "info": "Ether / IPv6 / UDP / mDNS Qry b'Dan-Iphone-7.local.'",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": null,
+        "dst_ip": null,
+        "protocol": "UDP",
+        "size": 273,
+        "info": "Ether / IPv6 / UDP / mDNS Qry b'_hap._tcp.local.'",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": null,
+        "dst_ip": null,
+        "protocol": "Other",
+        "size": 118,
+        "info": "Ether / IPv6 / ICMPv6ND_RA / ICMPv6NDOptPrefixInfo / ICMPv6NDOptMTU / ICMPv6 Neighbor Discovery Option - Source Link-Layer Address a8:6e:84:be:86:25",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": "192.168.1.104",
+        "dst_ip": "224.0.0.251",
+        "protocol": "UDP",
+        "size": 436,
+        "info": "Ether / IP / UDP / mDNS Ans [b'identifier=B756E7CA-F547-4F7A-A0D7-3ADC12AE9A87', b'authTag=uDpg4Ii2', b'ver=22', b'minVer=8', b'flags=0']",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": "192.168.1.110",
+        "dst_ip": "224.0.0.251",
+        "protocol": "UDP",
+        "size": 207,
+        "info": "Ether / IP / UDP / mDNS Qry b'Dan-Iphone-7.local.'",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": "192.168.1.104",
+        "dst_ip": "224.0.0.251",
+        "protocol": "UDP",
+        "size": 253,
+        "info": "Ether / IP / UDP / mDNS Qry b'_hap._tcp.local.'",
+        "is_anomalous": false
+    },
+    {
+        "src_ip": null,
+        "dst_ip": null,
+        "protocol": "UDP",
+        "size": 209,
+        "info": "Ether / IPv6 / UDP / mDNS Qry b'lb._dns-sd._udp.local.'",
+        "is_anomalous": false
+    }
+]
