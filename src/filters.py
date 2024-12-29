@@ -158,7 +158,7 @@ def packet_to_dict(packet):
         "src_ip": packet[IP].src if IP in packet else None,
         "dst_ip": packet[IP].dst if IP in packet else None,
         "protocol": "TCP" if TCP in packet else "UDP" if UDP in packet else "ICMPv6" if ICMPv6NDOptUnknown in packet else "MDNS" if DNS in packet and "5353" in packet.summary() else "HTTP" if HTTPRequest in packet or HTTPResponse in packet else "NTP" if Raw in packet and "ntp" in packet.summary().lower() else "Other",
-        "size": len(packet),
+        "Length": len(packet),
         "info": str(packet.summary()),
         "is_anomalous": is_anomalous  # Add anomaly flag
     }
