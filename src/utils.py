@@ -2,6 +2,7 @@ import sys
 import termios
 import tty
 import time
+import logging
 
 from scapy.all import IP, TCP, UDP
 from colorama import Fore, Style
@@ -81,7 +82,6 @@ def detect_anomaly(packet):
     dst_ip = ip_layer.dst
     protocol = "TCP" if TCP in packet else "UDP" if UDP in packet else packet.payload.name if hasattr(packet.payload, "name") else "Other"
     packet_size = len(packet)
-    is_anomalous = False
 
     # Define private IP ranges
     private_ip_prefixes = ["192.168.", "10.", "172.16.", "172.17.", "172.18.", "172.19.",
@@ -92,7 +92,6 @@ def detect_anomaly(packet):
 
     # Rule 1: Ignore typical multicast or broadcast traffic
     if dst_ip.startswith("224.") or dst_ip == "255.255.255.255":
-        print(Fore.YELLOW + f"Ignored multicast/broadcast traffic: {src_ip} -> {dst_ip}" + Style.RESET_ALL)
         return False
 
     # Rule 2: Trusted IPs
@@ -101,23 +100,19 @@ def detect_anomaly(packet):
     # Rule 3: Detect large packets
     size_threshold = 1500  # Threshold for large packets
     if packet_size > size_threshold:
-        print(Fore.YELLOW + f"Anomaly detected: Large packet ({packet_size} bytes) from {src_ip} to {dst_ip}" + Style.RESET_ALL)
-        is_anomalous = True
+        return True
 
     # Rule 4: Detect uncommon protocols
     common_protocols = {"TCP", "UDP", "ICMP"}
     if protocol not in common_protocols:
-        print(Fore.YELLOW + f"Anomaly detected: Uncommon protocol '{protocol}' in packet from {src_ip} to {dst_ip}" + Style.RESET_ALL)
-        is_anomalous = True
+        return True
 
-    # Rule 5: Public-to-public communication (skip this rule for trusted IPs)
+    # Rule 5: Public-to-public communication 
     src_is_private = is_private(src_ip)
     dst_is_private = is_private(dst_ip)
     if not src_is_private and not dst_is_private:
-        if dst_ip in trusted_ips or src_ip in trusted_ips:
-            print(Fore.YELLOW + f"Trusted public-to-public traffic: {src_ip} -> {dst_ip}" + Style.RESET_ALL)
-        else:
-            print(Fore.YELLOW + f"Anomaly detected: Public-to-public communication from {src_ip} to {dst_ip}" + Style.RESET_ALL)
-            is_anomalous = True
+        if dst_ip not in trusted_ips and src_ip not in trusted_ips:
+            return True
 
-    return is_anomalous
+    # If no anomaly is detected
+    return False

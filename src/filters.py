@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import logging
 from scapy.all import sniff, wrpcap, IP, TCP, UDP, ICMPv6NDOptUnknown, DNS, Raw
 from scapy.layers.http import HTTPRequest, HTTPResponse
 from colorama import Fore, Style
@@ -15,6 +16,7 @@ selected_duration = None  # Default duration
 selected_ip = None
 selected_packet_size_range = None
 enable_anomaly_detection = False
+remove_duplicates = False
 captured_packets = []  # Global list to store captured packets
 
 # ASCII Art Title
@@ -69,12 +71,20 @@ def capture_filtered_traffic(output_pcap="traffic_capture.pcap", output_json="tr
         min_size, max_size = selected_packet_size_range
         other_filters.append(f"greater {min_size} and less {max_size}")
 
+    # Combine protocol and other filters into a valid BPF filter
     protocol_str = " or ".join(protocol_filters) if protocol_filters else ""
     other_str = " and ".join(other_filters) if other_filters else ""
-
     filter_str = " and ".join(filter for filter in [protocol_str, other_str] if filter)
 
-    print(Fore.GREEN + f"Starting capture with filter: {filter_str or 'None'}" + Style.RESET_ALL)
+     # Display more statuses separately (not part of the BPF filter)
+    additional_status = []
+    if enable_anomaly_detection:
+        additional_status.append("Anomaly Detection")
+    if remove_duplicates:
+        additional_status.append("Remove Duplicates")
+
+    display_status = f" (Additional Filters: {', '.join(additional_status)})" if additional_status else ""
+    print(Fore.GREEN + f"Starting capture with filter: {filter_str or 'None'}{display_status}" + Style.RESET_ALL)
 
     try:
         sniff(
@@ -84,22 +94,35 @@ def capture_filtered_traffic(output_pcap="traffic_capture.pcap", output_json="tr
             stop_filter=lambda _: stop_capture,
         )
     except KeyboardInterrupt:
-        print(Fore.YELLOW + "\nCapture stopped by user. Finalizing..." + Style.RESET_ALL)
+        print(Fore.YELLOW + "\nCapture stopped by user. Finalising..." + Style.RESET_ALL)
         stop_capture = True  # Prevent further packet processing
     finally:
         save_captured_packets()
         print(Fore.GREEN + "Capture saved successfully!" + Style.RESET_ALL)
-        time.sleep(3)  # Delay for better visibility of the finalization message
+        time.sleep(3)  # Delay for better visibility 
 
 
 stop_capture = False  # Global flag to stop processing
-
+seen_packets = set()  # Set to store unique packets
 def packet_callback(packet):
-    global captured_packets, stop_capture
+    global captured_packets, stop_capture, remove_duplicates, seen_packets
+    
 
     # Ignore packets if stop_capture is True
     if stop_capture:
         return
+    
+      # Construct a unique identifier for the packet
+    packet_id = (
+        packet[IP].src if IP in packet else "Unknown",
+        packet[IP].dst if IP in packet else "Unknown",
+        "TCP" if TCP in packet else "UDP" if UDP in packet else "Other",
+        len(packet)
+    )
+    
+    if remove_duplicates and packet_id in seen_packets:
+        return
+    seen_packets.add(packet_id)
 
     protocol = "Other"
     if IP in packet:
@@ -123,16 +146,20 @@ def packet_callback(packet):
 
     # Only detect anomalies if enabled and stop_capture is False
     is_anomalous = False
+    capturing = True
     if enable_anomaly_detection and not stop_capture:
         is_anomalous = detect_anomaly(packet)
-        if is_anomalous:
-            print(Fore.RED + f"Anomaly detected in packet: {src_ip} -> {dst_ip} | Protocol: {protocol} | Length: {packet_length} bytes" + Style.RESET_ALL)
+        if is_anomalous and capturing:
+            logging.warning(f"Anomaly detected in packet: {src_ip} -> {dst_ip} | Protocol: {protocol} | Length: {packet_length} bytes")
 
     captured_packets.append((packet, is_anomalous))
 
 
 
 def save_captured_packets(output_pcap="traffic_capture.pcap", output_json="traffic_capture.json"):
+    
+    global seen_packets
+    
     try:
 
         # Prepare valid packets
@@ -150,24 +177,37 @@ def save_captured_packets(output_pcap="traffic_capture.pcap", output_json="traff
             print(Fore.RED + "No valid packets to save." + Style.RESET_ALL)
     except Exception as e:
         print(Fore.RED + f"Error during saving packets: {e}" + Style.RESET_ALL)
+    finally:
+        seen_packets.clear()
 
 # Helper function to convert a packet to dictionary
 def packet_to_dict(packet):
-    is_anomalous = detect_anomaly(packet)  # Determine if the packet is anomalous
-    return {
+    global enable_anomaly_detection  # Ensure access to the global flag
+
+    # Determine the anomaly status only if anomaly detection is enabled
+    is_anomalous = detect_anomaly(packet) if enable_anomaly_detection else None
+
+    # Construct the dictionary for the packet
+    packet_dict = {
         "src_ip": packet[IP].src if IP in packet else None,
         "dst_ip": packet[IP].dst if IP in packet else None,
         "protocol": "TCP" if TCP in packet else "UDP" if UDP in packet else "ICMPv6" if ICMPv6NDOptUnknown in packet else "MDNS" if DNS in packet and "5353" in packet.summary() else "HTTP" if HTTPRequest in packet or HTTPResponse in packet else "NTP" if Raw in packet and "ntp" in packet.summary().lower() else "Other",
-        "Length": len(packet),
-        "info": str(packet.summary()),
-        "is_anomalous": is_anomalous  # Add anomaly flag
+        "length": len(packet),
+        "info": str(packet.summary())
     }
+
+    # Only include the anomaly detection field if it's enabled
+    if enable_anomaly_detection:
+        packet_dict["is_anomalous"] = is_anomalous
+
+    return packet_dict
+
 
 
 def set_filter():
-    global selected_protocols, selected_port, selected_duration, selected_ip, selected_packet_size_range, enable_anomaly_detection
+    global selected_protocols, selected_port, selected_duration, selected_ip, selected_packet_size_range, enable_anomaly_detection, remove_duplicates
 
-    options = ["TCP", "UDP", "ICMP", "ICMPv6", "MDNS", "HTTP", "NTP", "Port", "Duration", "IP Address", "Packet Size Range", "Anomaly Detection"]
+    options = ["TCP", "UDP", "ICMP", "ICMPv6", "MDNS", "HTTP", "NTP", "Port", "Duration", "IP Address", "Packet Size Range", "Anomaly Detection", "Remove Duplicates"]
     current_selection = 0
     back_option_index = len(options)  # Index for the Back button
 
@@ -191,6 +231,8 @@ def set_filter():
                     display_value = "❌"
             elif option == "Anomaly Detection":
                 display_value = "✅" if enable_anomaly_detection else "❌"
+            elif option == "Remove Duplicates":
+                display_value = "✅" if remove_duplicates else "❌"
             else:  # Protocol options (TCP, UDP, ICMP, etc.)
                 protocol = option.lower()
                 display_value = "✅" if selected_protocols.get(protocol, False) else "❌"
@@ -201,7 +243,7 @@ def set_filter():
             print(color + f"{prefix} {option}: {display_value}" + Style.RESET_ALL)
 
         # Leave a few lines and display the Back button
-        print("\n" * 2)  # Add spacing before Back button
+        print("\n" * 2)  # Add some space
         color = Fore.YELLOW if current_selection == back_option_index else Fore.GREEN
         prefix = "-->" if current_selection == back_option_index else "   "
         print(color + f"{prefix} Back" + Style.RESET_ALL)
@@ -233,10 +275,11 @@ def set_filter():
                     selected_packet_size_range = None
             elif options[current_selection] == "Anomaly Detection":
                 enable_anomaly_detection = not enable_anomaly_detection
+            elif options[current_selection] == "Remove Duplicates":  # Handle "Remove Duplicates"
+                remove_duplicates = not remove_duplicates
             else:  # Protocol options (TCP, UDP, ICMP, etc.)
                 protocol = options[current_selection].lower()
                 selected_protocols[protocol] = not selected_protocols.get(protocol, False)
-
 
 # Terminal UI with main menu navigation
 def terminal_ui():

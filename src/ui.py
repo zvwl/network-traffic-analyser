@@ -38,13 +38,13 @@ def terminal_ui():
 
         key = get_keypress()
 
-        # Arrow key navigation: Up (Esc + [ + A), Down (Esc + [ + B)
+        # Arrow key navigation: Up and Down arrow keys
         if key == '\x1b[A':  # Up arrow key
             current_selection = (current_selection - 1) % len(options)
         elif key == '\x1b[B':  # Down arrow key
             current_selection = (current_selection + 1) % len(options)
         elif key == '\n' or key == '\r':  # Enter key or carriage return
-            # Perform action based on the selected option
+            # Do action based on the selected option
             if current_selection == 0:
                 # Start packet capture with spinner before it starts
                 capture_filtered_traffic()
