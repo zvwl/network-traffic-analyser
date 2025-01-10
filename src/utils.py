@@ -7,6 +7,19 @@ import logging
 from scapy.all import IP, TCP, UDP
 from colorama import Fore, Style
 
+from ml.preprocess import preprocess_data
+from joblib import load
+
+# Load ML model and preprocessors
+model = load("ml/anomaly_model.pkl")
+encoders = load("ml/encoders.pkl")
+scaler = load("ml/scaler.pkl")
+
+def detect_anomalies(packet_data):
+    X, _, _ = preprocess_data(packet_data, encoders, scaler)
+    probabilities = model.predict_proba(X)
+    threshold = 0.7  # Adjust threshold as needed
+    return (probabilities[:, 1] > threshold).astype(int)
 
 
 def loading_spinner(text, duration=5):
@@ -98,7 +111,7 @@ def detect_anomaly(packet):
     trusted_ips = {"20.190.159.4", "3.233.158.24", "3.233.158.25", "192.168.1.106", "192.168.1.105"}
 
     # Rule 3: Detect large packets
-    size_threshold = 1500  # Threshold for large packets
+    size_threshold = 100  # Threshold for large packets
     if packet_size > size_threshold:
         return True
 

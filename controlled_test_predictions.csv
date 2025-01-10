@@ -1,0 +1,4 @@
+src_ip,dst_ip,protocol,length,info,predictions
+192.168.1.1,8.8.8.8,TCP,500,Normal traffic,True
+10.0.0.1,224.0.0.1,UDP,2000,Potential attack,False
+unknown,192.168.1.255,ICMP,1500,Edge case,False

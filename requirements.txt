@@ -2,3 +2,7 @@ scapy
 colorama
 art
 pytest
+pandas
+scikit-learn
+joblib
+imbalanced-learn

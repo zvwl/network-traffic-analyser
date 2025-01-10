@@ -1,18 +1,34 @@
-.PHONY: setup run test clean
+# Makefile for Network Traffic Analyser
 
-# Install dependencies from requirements.txt
+# Variables
+PYTHON := python3
+VENV := .venv
+ACTIVATE := source $(VENV)/bin/activate
+REQ := requirements.txt
+
+# Targets
+.PHONY: all setup install run test clean
+
+all: setup install
+
 setup:
-	pip install -r requirements.txt
+	@echo "Setting up the virtual environment..."
+	$(PYTHON) -m venv $(VENV)
 
-# Run the network traffic analyzer
+install:
+	@echo "Installing dependencies..."
+	$(ACTIVATE) && pip install -r $(REQ)
+
 run:
-	python3 src/analyser.py
+	@echo "Running the Network Traffic Analyser..."
+	$(ACTIVATE) && $(PYTHON) src/main.py
 
-# Run unit tests
 test:
-	pytest tests/
+	@echo "Running tests..."
+	$(ACTIVATE) && pytest tests/
 
-# Clean up .pyc files and __pycache__ directories
 clean:
-	find . -name "*.pyc" -exec rm -f {} \;
-	find . -name "__pycache__" -exec rm -rf {} \;
+	@echo "Cleaning up..."
+	rm -rf $(VENV)
+	find . -type f -name '*.pyc' -delete
+	find . -type d -name '__pycache__' -delete

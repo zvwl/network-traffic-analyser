@@ -1,8 +1,9 @@
 import os
 from art import text2art
 from colorama import Fore, Style
-from src.utils import get_keypress, glowing_text, loading_spinner
+from src.utils import get_keypress, glowing_text, loading_spinner 
 from src.filters import capture_filtered_traffic, set_filter
+from src.utils import detect_anomalies
 
 
 def display_ascii_art(art):
@@ -54,3 +55,11 @@ def terminal_ui():
             elif current_selection == 2:
                 print(Fore.GREEN + "Exiting the program. Goodbye!" + Style.RESET_ALL)
                 break
+
+def display_traffic(traffic_data):
+    anomalies = detect_anomalies(traffic_data)
+    for idx, packet in enumerate(traffic_data):
+        if anomalies[idx]:
+            print(f"ANOMALY DETECTED: {packet}")
+        else:
+            print(f"Normal Packet: {packet}")
