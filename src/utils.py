@@ -111,7 +111,7 @@ def detect_anomaly(packet):
     trusted_ips = {"20.190.159.4", "3.233.158.24", "3.233.158.25", "192.168.1.106", "192.168.1.105"}
 
     # Rule 3: Detect large packets
-    size_threshold = 100  # Threshold for large packets
+    size_threshold = 1500  # Threshold for large packets
     if packet_size > size_threshold:
         return True
 

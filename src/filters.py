@@ -157,11 +157,7 @@ def packet_callback(packet):
 
 
 def save_captured_packets(output_pcap="traffic_capture.pcap", output_json="traffic_capture.json"):
-    
-    global seen_packets
-    
     try:
-
         # Prepare valid packets
         valid_packets = [pkt for pkt, _ in captured_packets if pkt is not None]
 
@@ -170,18 +166,26 @@ def save_captured_packets(output_pcap="traffic_capture.pcap", output_json="traff
             wrpcap(output_pcap, valid_packets)
 
             print(Fore.GREEN + f"Saving to {output_json}..." + Style.RESET_ALL)
-            with open(output_json, "w") as json_file:
-                json.dump([packet_to_dict(pkt) for pkt in valid_packets], json_file, indent=4)
-
+            with open(output_json, 'w') as json_file:
+                json.dump(
+                    [packet_to_dict(pkt, ts) for pkt, ts in captured_packets],
+                    json_file,
+                    default=str,
+                )
         else:
-            print(Fore.RED + "No valid packets to save." + Style.RESET_ALL)
-    except Exception as e:
-        print(Fore.RED + f"Error during saving packets: {e}" + Style.RESET_ALL)
-    finally:
-        seen_packets.clear()
+            # Handle case where no packets are captured
+            print(Fore.YELLOW + "No valid packets to save." + Style.RESET_ALL)
+            with open(output_json, 'w') as json_file:
+                json.dump([], json_file)  # Write an empty JSON array
 
-# Helper function to convert a packet to dictionary
-def packet_to_dict(packet):
+        logging.info("Captured packets saved successfully.")
+    except Exception as e:
+        logging.error(f"Failed to save captured packets: {e}")
+
+
+
+def packet_to_dict(packet, timestamp=None):
+    """Convert a packet to a dictionary format with an optional timestamp."""
     global enable_anomaly_detection  # Ensure access to the global flag
 
     # Determine the anomaly status only if anomaly detection is enabled
@@ -191,15 +195,12 @@ def packet_to_dict(packet):
     packet_dict = {
         "src_ip": packet[IP].src if IP in packet else None,
         "dst_ip": packet[IP].dst if IP in packet else None,
-        "protocol": "TCP" if TCP in packet else "UDP" if UDP in packet else "ICMPv6" if ICMPv6NDOptUnknown in packet else "MDNS" if DNS in packet and "5353" in packet.summary() else "HTTP" if HTTPRequest in packet or HTTPResponse in packet else "NTP" if Raw in packet and "ntp" in packet.summary().lower() else "Other",
+        "protocol": "TCP" if TCP in packet else "UDP" if UDP in packet else "Other",
         "length": len(packet),
-        "info": str(packet.summary())
+        "info": packet.summary(),
+        "timestamp": float(timestamp) if timestamp else None,  # Convert timestamp to float
+        "anomaly": is_anomalous,
     }
-
-    # Only include the anomaly detection field if it's enabled
-    if enable_anomaly_detection:
-        packet_dict["is_anomalous"] = is_anomalous
-
     return packet_dict
 
 
