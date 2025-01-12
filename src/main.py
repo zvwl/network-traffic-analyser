@@ -5,6 +5,14 @@ import logging
 import subprocess
 import pandas as pd
 from joblib import load
+import functools
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 # Add the project root and subdirectories to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -55,32 +63,39 @@ def train_model_on_capture_stop():
     except subprocess.CalledProcessError as e:
         logging.error(f"Model training failed: {e}")
 
-def stop_capture(sig, frame):
-    """Handle signal to stop traffic capture."""
+def stop_capture(sig, frame, shared_state):
     global capturing
     capturing = False
     logging.info("Capture stopped by user.")
 
-    # Save packets before validation
+    # Access the shared state
+    auto_training_enabled = shared_state["auto_training_enabled"]
+    logging.info(f"Automatic training is {'enabled' if auto_training_enabled else 'disabled'}.")
+
     from src.filters import save_captured_packets
     save_captured_packets()
 
-    # Validate and trigger model training
-    if validate_capture_data(CAPTURE_FILE_PATH):
-        train_model_on_capture_stop()
+    # Only trigger training if auto_training_enabled is True
+    if auto_training_enabled:
+        if validate_capture_data(CAPTURE_FILE_PATH):
+            train_model_on_capture_stop()
+        else:
+            logging.warning("Skipped training due to validation issues.")
     else:
-        logging.warning("Skipped training due to validation issues.")
+        logging.info("Automatic training is disabled. Skipping training.")
 
-    # Prompt the user to press Enter before returning to the main menu
     input("\nCapture stopped. Press Enter to return to the main menu...")
+    terminal_ui(train_model_on_capture_stop, validate_capture_data, shared_state)
 
-    # Return to the main terminal UI
-    terminal_ui(train_model_on_capture_stop, validate_capture_data)
-
-
-# Set signal handler for SIGINT
-signal.signal(signal.SIGINT, stop_capture)
 
 if __name__ == "__main__":
     glowing_text("Loading Network Traffic Analyser...", 1)
-    terminal_ui(train_model_on_capture_stop, validate_capture_data)
+
+    # Use a shared state dictionary
+    shared_state = {"auto_training_enabled": True}
+    logging.info(f"Initial state of automatic training: {'enabled' if shared_state['auto_training_enabled'] else 'disabled'}.")
+
+    # Pass the shared state to the signal handler
+    signal.signal(signal.SIGINT, functools.partial(stop_capture, shared_state=shared_state))
+
+    terminal_ui(train_model_on_capture_stop, validate_capture_data, shared_state)

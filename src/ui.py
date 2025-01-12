@@ -5,6 +5,14 @@ import time
 from src.utils import get_keypress, glowing_text, loading_spinner
 from src.filters import capture_filtered_traffic, set_filter
 from src.utils import detect_anomalies
+import sys
+import logging 
+
+
+# Add the project root to sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, ".."))
+sys.path.append(project_root)
 
 # Global variable for capture file path
 CAPTURE_FILE_PATH = "traffic_capture.json"
@@ -13,8 +21,11 @@ def display_ascii_art(art):
     """Display ASCII art in the terminal."""
     print(Fore.GREEN + art + Style.RESET_ALL)
 
-def terminal_ui(train_model_callback=None, validate_data_callback=None):
-    """Terminal UI for interacting with the program."""
+def terminal_ui(train_model_callback=None, validate_data_callback=None, shared_state=None):
+    if shared_state is None:
+        shared_state = {"auto_training_enabled": True}
+        
+        """Terminal UI for interacting with the program."""
     options = [
         "Start Network Traffic Analysis",
         "Set Filter",
@@ -49,19 +60,18 @@ def terminal_ui(train_model_callback=None, validate_data_callback=None):
 
         key = get_keypress()
 
-        # Arrow key navigation: Up and Down arrow keys
-        if key == "\x1b[A":  # Up arrow key
+         # Arrow key navigation
+        if key == "\x1b[A":
             current_selection = (current_selection - 1) % len(options)
-        elif key == "\x1b[B":  # Down arrow key
+        elif key == "\x1b[B":
             current_selection = (current_selection + 1) % len(options)
-        elif key == "\n" or key == "\r":  # Enter key or carriage return
-            # Perform action based on the selected option
+        elif key in ("\n", "\r"):  # Enter key
             if current_selection == 0:
                 print(Fore.GREEN + "Starting Network Traffic Analysis..." + Style.RESET_ALL)
                 capture_filtered_traffic()
 
-                # If auto-training is enabled, validate data and train the model
-                if auto_training_enabled and validate_data_callback and train_model_callback:
+                # Trigger training only if enabled
+                if shared_state["auto_training_enabled"] and validate_data_callback and train_model_callback:
                     if validate_data_callback(CAPTURE_FILE_PATH):
                         train_model_callback()
                     else:
@@ -72,10 +82,11 @@ def terminal_ui(train_model_callback=None, validate_data_callback=None):
                 set_filter()
 
             elif current_selection == 2:
-                # Toggle auto-training
-                auto_training_enabled = not auto_training_enabled
-                state = "Enabled" if auto_training_enabled else "Disabled"
-                print(Fore.CYAN + f"Automatic Training {state}!" + Style.RESET_ALL)
+                # Toggle the shared state
+                shared_state["auto_training_enabled"] = not shared_state["auto_training_enabled"]
+                state = "enabled" if shared_state["auto_training_enabled"] else "disabled"
+                logging.info(f"User set automatic training to {state}.")
+                print(Fore.CYAN + f"Automatic Training {state.capitalize()}!" + Style.RESET_ALL)
                 time.sleep(1)
 
             elif current_selection == 3:
