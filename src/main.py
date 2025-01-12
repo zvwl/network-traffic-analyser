@@ -71,7 +71,11 @@ def stop_capture(sig, frame):
     else:
         logging.warning("Skipped training due to validation issues.")
 
-    sys.exit(0)
+    # Prompt the user to press Enter before returning to the main menu
+    input("\nCapture stopped. Press Enter to return to the main menu...")
+
+    # Return to the main terminal UI
+    terminal_ui(train_model_on_capture_stop, validate_capture_data)
 
 
 # Set signal handler for SIGINT

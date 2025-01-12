@@ -1,6 +1,7 @@
 import os
 from art import text2art
 from colorama import Fore, Style
+import time
 from src.utils import get_keypress, glowing_text, loading_spinner
 from src.filters import capture_filtered_traffic, set_filter
 from src.utils import detect_anomalies
@@ -75,6 +76,7 @@ def terminal_ui(train_model_callback=None, validate_data_callback=None):
                 auto_training_enabled = not auto_training_enabled
                 state = "Enabled" if auto_training_enabled else "Disabled"
                 print(Fore.CYAN + f"Automatic Training {state}!" + Style.RESET_ALL)
+                time.sleep(1)
 
             elif current_selection == 3:
                 print(Fore.GREEN + "Exiting the program. Goodbye!" + Style.RESET_ALL)
