@@ -47,14 +47,13 @@ def update_cumulative_data(new_data_path):
 
 
 
-def augment_false_negatives(false_negatives, n_samples=50):
-    """Generate synthetic samples for false negatives."""
-    augmented_data = pd.concat([false_negatives] * n_samples, ignore_index=True)
-    augmented_data["length"] *= np.random.uniform(0.9, 1.1, size=len(augmented_data))
-    augmented_data["total_traffic"] *= np.random.uniform(0.9, 1.1, size=len(augmented_data))
-    augmented_data["unique_dst_ips"] += np.random.randint(-1, 2, size=len(augmented_data))
-    augmented_data["is_anomalous"] = True  # Ensure these are labeled as anomalies
-    return augmented_data
+# def augment_false_negatives(false_negatives, n_samples=50):
+#     """Generate synthetic samples for false negatives."""
+#     augmented_data = pd.concat([false_negatives] * n_samples, ignore_index=True)
+#     augmented_data["length"] *= np.random.uniform(0.9, 1.1, size=len(augmented_data))
+#     augmented_data["total_traffic"] *= np.random.uniform(0.9, 1.1, size=len(augmented_data))
+#     augmented_data["is_anomalous"] = True  # Ensure these are labeled as anomalies
+#     return augmented_data
 
 def validate_data(data):
     """Validate the dataset to ensure it is suitable for training."""
@@ -65,6 +64,13 @@ def validate_data(data):
         print(Fore.RED + "Missing target column 'is_anomalous'. Skipping training." + Style.RESET_ALL)
         return False
     return True
+
+def validate_numeric_data(data):
+    """Ensure all features in the dataset are numeric."""
+    non_numeric_cols = data.select_dtypes(exclude=[np.number]).columns
+    if len(non_numeric_cols) > 0:
+        raise ValueError(f"Non-numeric columns detected: {list(non_numeric_cols)}")
+
 
 def train_model():
     capture_file = "traffic_capture.json"
@@ -114,9 +120,9 @@ def train_model():
 
     # Train the model
     model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        class_weight={False: 1, True: 3},  # Penalize anomalies more
+        n_estimators=200,
+        max_depth=20,
+        class_weight={False: 1, True: 10},  # Penalize anomalies more
         random_state=42
     )
     model.fit(X_train_balanced, y_train_balanced)
@@ -136,12 +142,12 @@ def train_model():
     else:
         print(Fore.GREEN + "No false negatives detected." + Style.RESET_ALL)
 
-    # Augment dataset with false negatives
-    if not false_negatives.empty:
-        augmented_false_negatives = augment_false_negatives(false_negatives)
-        data = pd.concat([data, augmented_false_negatives], ignore_index=True)
-        data.to_json(CUMULATIVE_DATA_PATH, orient="records")
-        print(Fore.GREEN + f"Augmented the dataset with {len(augmented_false_negatives)} synthetic anomalies." + Style.RESET_ALL)
+    # # Augment dataset with false negatives
+    # if not false_negatives.empty:
+    #     augmented_false_negatives = augment_false_negatives(false_negatives)
+    #     data = pd.concat([data, augmented_false_negatives], ignore_index=True)
+    #     data.to_json(CUMULATIVE_DATA_PATH, orient="records")
+    #     print(Fore.GREEN + f"Augmented the dataset with {len(augmented_false_negatives)} synthetic anomalies." + Style.RESET_ALL)
 
     # Save the model and preprocessors
     dump(model, "ml/anomaly_model.pkl")

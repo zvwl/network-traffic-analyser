@@ -5,89 +5,60 @@ from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 def preprocess_data(data, encoders=None, scaler=None, is_training=True):
     data = data.copy()
 
-    # Explicitly handle missing values and ensure proper dtype
+    # Handle missing values and ensure proper data types
     for col in data.columns:
-        if data[col].dtype == "object":
-            data[col] = data[col].fillna("missing")
+        if col in ["src_ip", "dst_ip", "protocol"]:  # Categorical columns
+            data[col] = data[col].fillna("unknown").astype(str)
+        elif col == "timestamp":  # Numeric column
+            data[col] = pd.to_numeric(data[col], errors="coerce").fillna(0)
+        else:  # All other columns
+            data[col] = data[col].fillna(0)
+
+    # Encode categorical columns
+    if "src_ip" in data.columns:
+        if encoders is None or "src_ip" not in encoders:
+            le_src = LabelEncoder()
+            data["src_ip"] = le_src.fit_transform(data["src_ip"])
+            if encoders is not None:
+                encoders["src_ip"] = le_src
         else:
-            data[col] = data[col].fillna(0).astype(float)
-    
-    # Ensure 'timestamp' is numeric and calculate inter-arrival times
-    if "timestamp" in data.columns:
-        data["timestamp"] = pd.to_numeric(data["timestamp"], errors="coerce").fillna(0)
-        data["inter_arrival_time"] = data["timestamp"].diff().fillna(0)
+            le_src = encoders["src_ip"]
+            data["src_ip"] = le_src.transform(data["src_ip"])
 
-    # Add the number of unique destination IPs per source IP
-    if "src_ip" in data.columns and "dst_ip" in data.columns:
-        data["unique_dst_ips"] = data.groupby("src_ip")["dst_ip"].transform("nunique")
+    if "dst_ip" in data.columns:
+        if encoders is None or "dst_ip" not in encoders:
+            le_dst = LabelEncoder()
+            data["dst_ip"] = le_dst.fit_transform(data["dst_ip"])
+            if encoders is not None:
+                encoders["dst_ip"] = le_dst
+        else:
+            le_dst = encoders["dst_ip"]
+            data["dst_ip"] = le_dst.transform(data["dst_ip"])
 
-    # Add traffic volume by source IP
-    if "length" in data.columns:
+    if "protocol" in data.columns:
+        if encoders is None or "protocol" not in encoders:
+            le_protocol = LabelEncoder()
+            data["protocol"] = le_protocol.fit_transform(data["protocol"])
+            if encoders is not None:
+                encoders["protocol"] = le_protocol
+        else:
+            le_protocol = encoders["protocol"]
+            data["protocol"] = le_protocol.transform(data["protocol"])
+
+    # Add total_traffic feature
+    if "length" in data.columns and "src_ip" in data.columns:
         data["total_traffic"] = data.groupby("src_ip")["length"].transform("sum")
 
-    # Add length-to-traffic ratio
-    if "length" in data.columns and "total_traffic" in data.columns:
-        data["length_to_traffic_ratio"] = data["length"] / (data["total_traffic"] + 1e-6)  # Avoid division by zero
+    # Drop irrelevant columns
+    irrelevant_columns = ["info", "anomaly"]  # Add more irrelevant columns if necessary
+    data = data.drop(columns=irrelevant_columns, errors="ignore")
 
-    # Add rare combination flag for src-dst-protocol
-    if "src_ip" in data.columns and "dst_ip" in data.columns and "protocol" in data.columns:
-        data["src_dst_protocol"] = data["src_ip"].astype(str) + "_" + data["dst_ip"].astype(str) + "_" + data["protocol"].astype(str)
-        
-        # Encode src_dst_protocol into numeric format
-        if encoders is None or "src_dst_protocol" not in encoders:
-            le = LabelEncoder()
-            data["src_dst_protocol"] = le.fit_transform(data["src_dst_protocol"])
-            if encoders is not None:
-                encoders["src_dst_protocol"] = le
-        else:
-            # Dynamically update encoder for src_dst_protocol
-            le = encoders["src_dst_protocol"]
-            unseen_labels = set(data["src_dst_protocol"].unique()) - set(le.classes_)
-            if unseen_labels:
-                le.classes_ = np.append(le.classes_, list(unseen_labels))
-            data["src_dst_protocol"] = data["src_dst_protocol"].apply(
-                lambda x: le.transform([x])[0] if x in le.classes_ else le.transform(["unknown"])[0]
-            )
-
-    # Ensure required columns exist
-    required_columns = ["src_ip", "dst_ip", "protocol", "length"]
-    for col in required_columns:
-        if col not in data.columns:
-            raise ValueError(f"Missing required column: {col}")
-
-    # Ensure categorical columns are strings before encoding
-    categorical_columns = ["src_ip", "dst_ip", "protocol", "src_dst_protocol"]
-    for col in categorical_columns:
-        if col in data.columns:
-            data[col] = data[col].astype(str)
-
-    # Encode categorical variables
-    if not encoders:
-        encoders = {}
-        for col in ["src_ip", "dst_ip", "protocol"]:
-            le = LabelEncoder()
-            data[col] = le.fit_transform(data[col])
-            encoders[col] = le
-    else:
-        # Dynamically update encoder for unseen labels
-        def update_encoder(encoder, new_labels):
-            unseen_labels = set(new_labels) - set(encoder.classes_)
-            if unseen_labels:
-                encoder.classes_ = np.append(encoder.classes_, list(unseen_labels))
-
-        for col, le in encoders.items():
-            update_encoder(le, data[col].unique())
-            data[col] = data[col].apply(
-                lambda x: le.transform([x])[0] if x in le.classes_ else le.transform(["unknown"])[0]
-            )
-
-    # Normalize numerical values
+    # Scale numeric columns
+    numeric_columns = data.select_dtypes(include=[np.number]).columns
     if not scaler:
         scaler = MinMaxScaler()
-        data["length"] = scaler.fit_transform(data[["length"]])
+        data[numeric_columns] = scaler.fit_transform(data[numeric_columns])
     else:
-        data["length"] = scaler.transform(data[["length"]])
+        data[numeric_columns] = scaler.transform(data[numeric_columns])
 
-    # Select features for training
-    X = data.drop(columns=["info", "is_anomalous"], errors="ignore")
-    return X, encoders, scaler
+    return data, encoders, scaler
