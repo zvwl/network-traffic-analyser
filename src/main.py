@@ -100,7 +100,7 @@ def exit_program():
     print(Fore.GREEN + "Exiting the program. Goodbye!" + Style.RESET_ALL)
     
     # Force exit to ensure all processes terminate
-    os._exit(0)  # This is more reliable than sys.exit()
+    os._exit(0)  
 
 if __name__ == "__main__":
     glowing_text("Loading Network Traffic Analyser...", 1)
