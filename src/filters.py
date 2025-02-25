@@ -2,10 +2,10 @@ import os
 import json
 import time
 import logging
-from scapy.all import sniff, wrpcap, IP, TCP, UDP, ICMPv6NDOptUnknown, DNS, Raw
+from scapy.all import sniff, wrpcap, IP, TCP, UDP, ICMPv6NDOptUnknown, DNS, ICMP
 from scapy.layers.http import HTTPRequest, HTTPResponse
 from colorama import Fore, Style
-from src.utils import loading_spinner, get_keypress, get_duration_input, get_ip_input, get_packet_size_range
+from src.utils import get_keypress
 from src.utils import detect_anomaly
 from datetime import datetime
 
@@ -15,9 +15,10 @@ selected_port = None
 selected_duration = None  # Default duration
 selected_ip = None
 selected_packet_size_range = None
-enable_anomaly_detection = False
 remove_duplicates = False
 captured_packets = []  # Global list to store captured packets
+sniffer_thread = None
+
 
 # ASCII Art Title
 def display_ascii_art():
@@ -78,8 +79,6 @@ def capture_filtered_traffic(output_pcap="traffic_capture.pcap", output_json="tr
 
      # Display more statuses separately (not part of the BPF filter)
     additional_status = []
-    if enable_anomaly_detection:
-        additional_status.append("Anomaly Detection")
     if remove_duplicates:
         additional_status.append("Remove Duplicates")
 
@@ -104,15 +103,19 @@ def capture_filtered_traffic(output_pcap="traffic_capture.pcap", output_json="tr
 
 stop_capture = False  # Global flag to stop processing
 seen_packets = set()  # Set to store unique packets
+
 def packet_callback(packet):
     global captured_packets, stop_capture, remove_duplicates, seen_packets
     
-
     # Ignore packets if stop_capture is True
     if stop_capture:
+        return True
+    
+    # Basic packet validation
+    if IP not in packet:
         return
     
-      # Construct a unique identifier for the packet
+    # Create packet identifier for duplicate detection
     packet_id = (
         packet[IP].src if IP in packet else "Unknown",
         packet[IP].dst if IP in packet else "Unknown",
@@ -120,95 +123,173 @@ def packet_callback(packet):
         len(packet)
     )
     
+    # Skip duplicates if enabled
     if remove_duplicates and packet_id in seen_packets:
         return
     seen_packets.add(packet_id)
 
+    # Determine protocol
     protocol = "Other"
     if IP in packet:
-        protocol = "TCP" if TCP in packet else "UDP" if UDP in packet else "IP"
+        if TCP in packet:
+            protocol = "TCP"
+            if HTTPRequest in packet or HTTPResponse in packet:
+                protocol = "HTTP"
+        elif UDP in packet:
+            protocol = "UDP"
+            if DNS in packet and packet[UDP].dport == 5353:
+                protocol = "MDNS"
+            elif packet[UDP].dport == 123:
+                protocol = "NTP"
+        elif ICMP in packet:
+            protocol = "ICMP"
     elif ICMPv6NDOptUnknown in packet:
         protocol = "ICMPv6"
-    elif DNS in packet and ("5353" in packet.summary()):
-        protocol = "MDNS"
-    elif HTTPRequest in packet or HTTPResponse in packet:
-        protocol = "HTTP"
-    elif Raw in packet and "ntp" in packet.summary().lower():
-        protocol = "NTP"
 
+    # Get timestamp and packet details
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     src_ip = packet[IP].src if IP in packet else "Unknown"
     dst_ip = packet[IP].dst if IP in packet else "Unknown"
     packet_length = len(packet)
     packet_info = packet.summary()
 
-    print(Fore.GREEN + f"[+] {timestamp} | {src_ip} -> {dst_ip} | Protocol: {protocol} | Length: {packet_length} bytes | Info: {packet_info}" + Style.RESET_ALL)
+    # Perform enhanced anomaly detection
+    is_anomaly, detected_attacks = detect_anomaly(packet)
+    
+    # Store the packet with its anomaly status and attack types
+    captured_packets.append((packet, is_anomaly, detected_attacks))
 
-    # Only detect anomalies if enabled and stop_capture is False
-    is_anomalous = False
-    capturing = True
-    if enable_anomaly_detection and not stop_capture:
-        is_anomalous = detect_anomaly(packet)
-        if is_anomalous and capturing:
-            logging.warning(f"Anomaly detected in packet: {src_ip} -> {dst_ip} | Protocol: {protocol} | Length: {packet_length} bytes")
+    # Color coding based on attack type
+    status_color = Fore.GREEN  # Default color for normal packets
+    if is_anomaly:
+        if 'port_scan' in detected_attacks:
+            status_color = Fore.MAGENTA  # Purple for port scans
+        elif 'syn_flood' in detected_attacks:
+            status_color = Fore.RED  # Red for SYN floods
+        elif 'ping_flood' in detected_attacks:
+            status_color = Fore.YELLOW  # Yellow for ping floods
+        elif 'sql_injection' in detected_attacks:
+            status_color = Fore.CYAN  # Cyan for SQL injection
+        elif 'malformed_packets' in detected_attacks:
+            status_color = Fore.BLUE  # Blue for malformed packets
+        elif 'large_packets' in detected_attacks:
+            status_color = Fore.LIGHTRED_EX  # Light red for large packets
+        else:
+            status_color = Fore.RED  # Default anomaly color
 
-    captured_packets.append((packet, is_anomalous))
+    # Format attack types for display
+    attack_str = f"[{', '.join(detected_attacks)}]" if detected_attacks else "None"
+    
+    # Enhanced packet information display
+    port_info = ""
+    if TCP in packet:
+        port_info = f":{packet[TCP].sport} > :{packet[TCP].dport}"
+    elif UDP in packet:
+        port_info = f":{packet[UDP].sport} > :{packet[UDP].dport}"
 
-
+    # Print packet information with enhanced formatting
+    print(status_color + 
+          f"[+] {timestamp} | {src_ip}{port_info} -> {dst_ip} | "
+          f"Protocol: {protocol} | Length: {packet_length} bytes | "
+          f"Attack Types: {attack_str} | "
+          f"Info: {packet_info}" + 
+          Style.RESET_ALL)
 
 def save_captured_packets(output_pcap="traffic_capture.pcap", output_json="traffic_capture.json"):
+    """
+    Save captured packets to PCAP and JSON files with enhanced attack information.
+    """
     try:
-        # Prepare valid packets
-        valid_packets = [pkt for pkt, _ in captured_packets if pkt is not None]
-
+        # Extract packets and their anomaly status
+        valid_packets = [(pkt, bool(anomaly), attacks) for pkt, anomaly, attacks in captured_packets if pkt is not None]
+        
         if valid_packets:
+            # Save PCAP file
             print(Fore.GREEN + f"Saving to {output_pcap}..." + Style.RESET_ALL)
-            wrpcap(output_pcap, valid_packets)
-
+            wrpcap(output_pcap, [pkt for pkt, _, _ in valid_packets])
+            
+            # Save JSON file with enhanced attack information
             print(Fore.GREEN + f"Saving to {output_json}..." + Style.RESET_ALL)
+            json_data = [packet_to_dict(pkt, anomaly, attacks) for pkt, anomaly, attacks in valid_packets]
+            
             with open(output_json, 'w') as json_file:
-                json.dump(
-                    [packet_to_dict(pkt, ts) for pkt, ts in captured_packets],
-                    json_file,
-                    default=str,
-                )
+                json.dump(json_data, json_file, default=str)
         else:
-            # Handle case where no packets are captured
             print(Fore.YELLOW + "No valid packets to save." + Style.RESET_ALL)
             with open(output_json, 'w') as json_file:
-                json.dump([], json_file)  # Write an empty JSON array
-
+                json.dump([], json_file)
+        
         logging.info("Captured packets saved successfully.")
     except Exception as e:
         logging.error(f"Failed to save captured packets: {e}")
+        raise
 
-
-
-def packet_to_dict(packet, timestamp=None):
-    """Convert a packet to a dictionary format with an optional timestamp."""
-    global enable_anomaly_detection  # Ensure access to the global flag
-
-    # Determine the anomaly status only if anomaly detection is enabled
-    is_anomalous = detect_anomaly(packet) if enable_anomaly_detection else None
-
-    # Construct the dictionary for the packet
+def packet_to_dict(packet, anomaly_status, detected_attacks):
+    """
+    Convert a packet to a dictionary format with enhanced attack information.
+    
+    Parameters:
+    packet: scapy packet object
+    anomaly_status: boolean indicating if the packet is anomalous
+    detected_attacks: list of detected attack types
+    
+    Returns:
+    dict: Dictionary containing packet information with attack details
+    """
+    # Basic packet validation
+    if IP not in packet:
+        return {
+            "src_ip": None,
+            "dst_ip": None,
+            "protocol": "Unknown",
+            "length": len(packet),
+            "info": packet.summary(),
+            "timestamp": datetime.now().timestamp(),
+            "anomaly": False,
+            "attack_types": []
+        }
+    
+    # Extract protocol information
+    protocol = "TCP" if TCP in packet else "UDP" if UDP in packet else "Other"
+    if protocol == "TCP":
+        if HTTPRequest in packet or HTTPResponse in packet:
+            protocol = "HTTP"
+    elif protocol == "UDP":
+        if DNS in packet and packet[UDP].dport == 5353:
+            protocol = "MDNS"
+        elif packet[UDP].dport == 123:
+            protocol = "NTP"
+    
+    # Extract port information
+    src_port = None
+    dst_port = None
+    if TCP in packet:
+        src_port = packet[TCP].sport
+        dst_port = packet[TCP].dport
+    elif UDP in packet:
+        src_port = packet[UDP].sport
+        dst_port = packet[UDP].dport
+    
+    # Create enhanced packet dictionary
     packet_dict = {
-        "src_ip": packet[IP].src if IP in packet else None,
-        "dst_ip": packet[IP].dst if IP in packet else None,
-        "protocol": "TCP" if TCP in packet else "UDP" if UDP in packet else "Other",
+        "src_ip": packet[IP].src,
+        "dst_ip": packet[IP].dst,
+        "src_port": src_port,
+        "dst_port": dst_port,
+        "protocol": protocol,
         "length": len(packet),
         "info": packet.summary(),
-        "timestamp": float(timestamp) if timestamp else None,  # Convert timestamp to float
-        "anomaly": is_anomalous,
+        "timestamp": datetime.now().timestamp(),
+        "anomaly": bool(anomaly_status),
+        "attack_types": detected_attacks if detected_attacks else []
     }
+    
     return packet_dict
 
-
-
 def set_filter():
-    global selected_protocols, selected_port, selected_duration, selected_ip, selected_packet_size_range, enable_anomaly_detection, remove_duplicates
+    global selected_protocols, selected_port, selected_duration, selected_ip, selected_packet_size_range, remove_duplicates
 
-    options = ["TCP", "UDP", "ICMP", "ICMPv6", "MDNS", "HTTP", "NTP", "Port", "Duration", "IP Address", "Packet Size Range", "Anomaly Detection", "Remove Duplicates"]
+    options = ["TCP", "UDP", "ICMP", "ICMPv6", "MDNS", "HTTP", "NTP", "Port", "Duration", "IP Address", "Packet Size Range", "Remove Duplicates"]
     current_selection = 0
     back_option_index = len(options)  # Index for the Back button
 
@@ -230,8 +311,6 @@ def set_filter():
                     display_value = f"{selected_packet_size_range[0]}-{selected_packet_size_range[1]} bytes"
                 else:
                     display_value = "❌"
-            elif option == "Anomaly Detection":
-                display_value = "✅" if enable_anomaly_detection else "❌"
             elif option == "Remove Duplicates":
                 display_value = "✅" if remove_duplicates else "❌"
             else:  # Protocol options (TCP, UDP, ICMP, etc.)
@@ -274,8 +353,6 @@ def set_filter():
                     selected_packet_size_range = (int(min_size), int(max_size))
                 else:
                     selected_packet_size_range = None
-            elif options[current_selection] == "Anomaly Detection":
-                enable_anomaly_detection = not enable_anomaly_detection
             elif options[current_selection] == "Remove Duplicates":  # Handle "Remove Duplicates"
                 remove_duplicates = not remove_duplicates
             else:  # Protocol options (TCP, UDP, ICMP, etc.)
@@ -313,3 +390,13 @@ def terminal_ui():
             elif current_selection == 2:
                 print(Fore.GREEN + "Exiting the program. Goodbye!" + Style.RESET_ALL)
                 break
+
+def stop_capture_process():
+    """Properly stop the capture process."""
+    global stop_capture, captured_packets
+    
+    stop_capture = True
+    print(Fore.YELLOW + "Stopping capture process..." + Style.RESET_ALL)
+    
+    # Clear captured packets to prevent saving on exit
+    captured_packets = []

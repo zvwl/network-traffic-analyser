@@ -4,9 +4,10 @@ import signal
 import logging
 import subprocess
 import pandas as pd
-from joblib import load
 import functools
-
+import time
+from colorama import Fore, Style
+from joblib import load
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -58,7 +59,7 @@ def train_model_on_capture_stop():
     """Trigger model training after traffic capture stops."""
     logging.info("Training the anomaly detection model...")
     try:
-        subprocess.run(["python", "ml/train_model.py"], check=True)
+        subprocess.run(["python3", "ml/train_model.py"], check=True)
         logging.info("Model training completed successfully.")
     except subprocess.CalledProcessError as e:
         logging.error(f"Model training failed: {e}")
@@ -87,6 +88,19 @@ def stop_capture(sig, frame, shared_state):
     input("\nCapture stopped. Press Enter to return to the main menu...")
     terminal_ui(train_model_on_capture_stop, validate_capture_data, shared_state)
 
+def exit_program():
+    """Properly shut down all processes and exit."""
+    print(Fore.GREEN + "Shutting down all processes..." + Style.RESET_ALL)
+    
+    # Import and stop any capture processes
+    from src.filters import stop_capture_process
+    stop_capture_process()
+    
+    time.sleep(1)
+    print(Fore.GREEN + "Exiting the program. Goodbye!" + Style.RESET_ALL)
+    
+    # Force exit to ensure all processes terminate
+    os._exit(0)  # This is more reliable than sys.exit()
 
 if __name__ == "__main__":
     glowing_text("Loading Network Traffic Analyser...", 1)

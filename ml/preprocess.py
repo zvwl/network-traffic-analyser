@@ -4,7 +4,11 @@ from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 
 def preprocess_data(data, encoders=None, scaler=None, is_training=True):
     data = data.copy()
-
+    
+     # Ensure anomaly field is properly formatted if present
+    if 'anomaly' in data.columns and is_training:
+        data['anomaly'] = data['anomaly'].fillna(False).astype(bool)
+        
     # Handle missing values and ensure proper data types
     for col in data.columns:
         if col in ["src_ip", "dst_ip", "protocol"]:  # Categorical columns

@@ -1,8 +1,7 @@
 import os
-from art import text2art
 from colorama import Fore, Style
 import time
-from src.utils import get_keypress, glowing_text, loading_spinner
+from src.utils import get_keypress
 from src.filters import capture_filtered_traffic, set_filter
 from src.utils import detect_anomalies
 import sys
@@ -89,9 +88,10 @@ def terminal_ui(train_model_callback=None, validate_data_callback=None, shared_s
                 print(Fore.CYAN + f"Automatic Training {state.capitalize()}!" + Style.RESET_ALL)
                 time.sleep(1)
 
-            elif current_selection == 3:
-                print(Fore.GREEN + "Exiting the program. Goodbye!" + Style.RESET_ALL)
-                break
+            elif current_selection == 3:  # Exit option
+                print(Fore.GREEN + "Exiting the program..." + Style.RESET_ALL)
+                from main import exit_program
+                exit_program()
 
 def display_traffic(traffic_data):
     """Display traffic packets with anomaly detection."""
