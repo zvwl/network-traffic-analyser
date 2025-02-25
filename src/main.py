@@ -60,7 +60,6 @@ def train_model_on_capture_stop():
     logging.info("Training the anomaly detection model...")
     try:
         subprocess.run(["python3", "ml/train_model.py"], check=True)
-        logging.info("Model training completed successfully.")
     except subprocess.CalledProcessError as e:
         logging.error(f"Model training failed: {e}")
 
@@ -85,7 +84,7 @@ def stop_capture(sig, frame, shared_state):
     else:
         logging.info("Automatic training is disabled. Skipping training.")
 
-    input("\nCapture stopped. Press Enter to return to the main menu...")
+    input(Fore.YELLOW + "Capture stopped. Press Enter to return to the main menu..." + Style.RESET_ALL)
     terminal_ui(train_model_on_capture_stop, validate_capture_data, shared_state)
 
 def exit_program():

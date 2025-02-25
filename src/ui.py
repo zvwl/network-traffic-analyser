@@ -75,6 +75,7 @@ def terminal_ui(train_model_callback=None, validate_data_callback=None, shared_s
                         train_model_callback()
                     else:
                         print(Fore.RED + "Capture data validation failed. Skipping training." + Style.RESET_ALL)
+                input(Fore.YELLOW + "Capture stopped. Press Enter to return to the main menu..." + Style.RESET_ALL)
 
             elif current_selection == 1:
                 print(Fore.GREEN + "Setting filters..." + Style.RESET_ALL)
@@ -84,7 +85,6 @@ def terminal_ui(train_model_callback=None, validate_data_callback=None, shared_s
                 # Toggle the shared state
                 shared_state["auto_training_enabled"] = not shared_state["auto_training_enabled"]
                 state = "enabled" if shared_state["auto_training_enabled"] else "disabled"
-                logging.info(f"User set automatic training to {state}.")
                 print(Fore.CYAN + f"Automatic Training {state.capitalize()}!" + Style.RESET_ALL)
                 time.sleep(1)
 
