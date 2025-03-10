@@ -1,3 +1,5 @@
+import pandas as pd
+from joblib import load
 import os
 import json
 import time
@@ -6,8 +8,10 @@ from scapy.all import sniff, wrpcap, IP, TCP, UDP, ICMPv6NDOptUnknown, DNS, ICMP
 from scapy.layers.http import HTTPRequest, HTTPResponse
 from colorama import Fore, Style
 from src.utils import get_keypress
-from src.utils import detect_anomaly
 from datetime import datetime
+from ml.model_loader import model_loader
+from ml.preprocess import preprocess_data
+from ml.feature_extractor import feature_extractor
 
 # Global filter variables
 selected_protocols = {"tcp": False, "udp": False, "icmp": False, "icmpv6": False, "mdns": False, "http": False, "ntp": False}
@@ -18,6 +22,21 @@ selected_packet_size_range = None
 remove_duplicates = False
 captured_packets = []  # Global list to store captured packets
 sniffer_thread = None
+
+# Global tracking variables for attack detection
+last_scan_port = None
+last_scan_src = None 
+last_scan_dst = None
+random_src_ips = set()
+random_src_count = 0
+last_check_time = time.time()
+
+# Maximum number of entries to track (to prevent memory issues)
+MAX_TRACKING_ENTRIES = 1000
+
+# Port scan tracking
+seen_dst_ips = set()
+seen_src_ips_per_dst = {}  # Maps dst_ip to set of src_ips that have connected
 
 
 # ASCII Art Title
@@ -32,7 +51,7 @@ def display_ascii_art():
     """
     print(Fore.GREEN + art + Style.RESET_ALL)
 
-def capture_filtered_traffic(output_pcap="traffic_capture.pcap", output_json="traffic_capture.json"):
+def capture_filtered_traffic(output_pcap="traffic_capture.pcap", output_csv="traffic_capture.csv"):
     global selected_protocols, selected_port, selected_duration, selected_ip, selected_packet_size_range, captured_packets, stop_capture
 
     stop_capture = False  # Reset the stop flag
@@ -41,8 +60,8 @@ def capture_filtered_traffic(output_pcap="traffic_capture.pcap", output_json="tr
     captured_packets = []
 
     # Remove old output files
-    if os.path.exists(output_json):
-        os.remove(output_json)
+    if os.path.exists(output_csv):
+        os.remove(output_csv)
     if os.path.exists(output_pcap):
         os.remove(output_pcap)
 
@@ -91,6 +110,7 @@ def capture_filtered_traffic(output_pcap="traffic_capture.pcap", output_json="tr
             prn=packet_callback,
             timeout=selected_duration,
             stop_filter=lambda _: stop_capture,
+            iface="en0" 
         )
     except KeyboardInterrupt:
         print(Fore.YELLOW + "\nCapture stopped by user. Finalising..." + Style.RESET_ALL)
@@ -106,6 +126,9 @@ seen_packets = set()  # Set to store unique packets
 
 def packet_callback(packet):
     global captured_packets, stop_capture, remove_duplicates, seen_packets
+    global last_scan_port, last_scan_src, last_scan_dst
+    global random_src_ips, random_src_count, last_check_time
+    global seen_dst_ips, seen_src_ips_per_dst
     
     # Ignore packets if stop_capture is True
     if stop_capture:
@@ -127,17 +150,67 @@ def packet_callback(packet):
     if remove_duplicates and packet_id in seen_packets:
         return
     seen_packets.add(packet_id)
+    
+    # Track source/dst IPs for port scan detection
+    src_ip = packet[IP].src
+    dst_ip = packet[IP].dst
+    
+    # Add to tracking sets for port scan detection
+    seen_dst_ips.add(dst_ip)
+    if dst_ip not in seen_src_ips_per_dst:
+        seen_src_ips_per_dst[dst_ip] = set()
+    seen_src_ips_per_dst[dst_ip].add(src_ip)
+    
+    # Track random source IPs for DDoS detection
+    if TCP in packet and packet[TCP].flags & 0x02:  # SYN flag set
+        random_src_ips.add(src_ip)
+        random_src_count = len(random_src_ips)
+        
+        # Reset the counter periodically
+        current_time = time.time()
+        if current_time - last_check_time > 5:  # Reset every 5 seconds
+            last_check_time = current_time
+            random_src_ips.clear()
+            random_src_count = 0
+    
+    # Cleanup tracking data if it grows too large
+    if len(seen_dst_ips) > MAX_TRACKING_ENTRIES:
+        seen_dst_ips.clear()
+        seen_src_ips_per_dst.clear()
+        random_src_ips.clear()
+        random_src_count = 0
 
-    # Determine protocol
+    # Extract features using the feature extractor
+    features = feature_extractor.extract_features(packet)
+    
+    if not features:
+        return  # Skip packets that don't have features
+        
+    # Determine protocol for display
     protocol = "Other"
+    is_http = False
+    
     if IP in packet:
         if TCP in packet:
             protocol = "TCP"
+            # Check for HTTP content
+            from scapy.all import Raw
+            if Raw in packet:
+                raw_data = packet[Raw].load
+                try:
+                    if (raw_data.startswith(b'POST') or raw_data.startswith(b'GET') or 
+                        raw_data.startswith(b'HTTP')):
+                        protocol = "HTTP"
+                        is_http = True
+                except:
+                    pass
+            # Also check for standard HTTP detection
             if HTTPRequest in packet or HTTPResponse in packet:
                 protocol = "HTTP"
+                is_http = True
         elif UDP in packet:
             protocol = "UDP"
-            if DNS in packet and packet[UDP].dport == 5353:
+            if packet[UDP].dport == 5353:
                 protocol = "MDNS"
             elif packet[UDP].dport == 123:
                 protocol = "NTP"
@@ -146,95 +219,156 @@ def packet_callback(packet):
     elif ICMPv6NDOptUnknown in packet:
         protocol = "ICMPv6"
 
-    # Get timestamp and packet details
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    src_ip = packet[IP].src if IP in packet else "Unknown"
-    dst_ip = packet[IP].dst if IP in packet else "Unknown"
-    packet_length = len(packet)
-    packet_info = packet.summary()
-
-    # Perform enhanced anomaly detection
-    is_anomaly, detected_attacks = detect_anomaly(packet)
+    # Detect anomalies using ML model only
+    ml_detected = False
+    ml_confidence = 0.0
+    attack_type = "None"
     
-    # Store the packet with its anomaly status and attack types
-    captured_packets.append((packet, is_anomaly, detected_attacks))
+    if model_loader.model:
+        try:
+            # Convert features to DataFrame
+            features_df = pd.DataFrame([features])
+            
+            # Ensure all required columns are present and in correct order
+            for col in model_loader.feature_names:
+                if col not in features_df.columns:
+                    features_df[col] = 0
+            
+            # Reorder columns to match training data
+            features_df = features_df[model_loader.feature_names]
+            
+            # Make prediction with confidence threshold
+            prediction, probabilities = model_loader.predict(features_df, preprocess_data)
+            
+            # Check if prediction is not None and contains at least one element
+            if prediction is not None and len(prediction) > 0 and prediction[0] == 1:
+                ml_detected = True
+                
+                # Get confidence level
+                if probabilities is not None and len(probabilities) > 0 and len(probabilities[0]) > 1:
+                    ml_confidence = probabilities[0][1]  # Anomaly probability
+                    
+                    # Direct flag-based malformed packet detection
+                    if TCP in packet:
+                        flags = packet[TCP].flags
+                        if (flags & 0x3F) == 0x3F or (flags & 0x03) == 0x03 or (flags & 0x06) == 0x06:
+                            attack_type = "Malformed Packet"
+                    
+                    # If not already classified, use feature-based detection
+                    if attack_type == "None":
+                        # 1. Malformed Packet Detection
+                        if features['wrong_fragment'] > 0 or features['urgent'] > 0:
+                            attack_type = "Malformed Packet" 
+                        # 2. Port Scan Detection - improved
+                        elif features['same_srv_rate'] < 0.5 or features['diff_srv_rate'] > 0.5 or (
+                             TCP in packet and last_scan_port == packet[TCP].sport and 
+                             last_scan_src == src_ip and 
+                             last_scan_dst == dst_ip):
+                            attack_type = "Port Scan"
+                            if TCP in packet:
+                                last_scan_port = packet[TCP].sport
+                                last_scan_src = src_ip
+                                last_scan_dst = dst_ip
+                        # 3. Ping Flood Detection
+                        elif features['protocol_type'] == 'icmp' and features['count'] > 20:
+                            attack_type = "Ping Flood"
+                        else:
+                            attack_type = "Potential Unknown Attack"
+        except Exception as e:
+            logging.error(f"Error making prediction: {e}")
 
-    # Color coding based on attack type
+    # Store the packet with its features and ML detection result
+    detection_result = {
+        'is_anomaly': ml_detected,
+        'ml_confidence': ml_confidence,
+        'attack_type': attack_type
+    }
+    
+    captured_packets.append((packet, features, detection_result))
+
+    # Format for display
+    if ml_detected:
+        attack_str = f"[{attack_type} (ML:{ml_confidence:.2f})]"
+    else:
+        attack_str = "None"
+    
+    # Color coding based on detection
     status_color = Fore.GREEN  # Default color for normal packets
-    if is_anomaly:
-        if 'port_scan' in detected_attacks:
-            status_color = Fore.MAGENTA  # Purple for port scans
-        elif 'syn_flood' in detected_attacks:
-            status_color = Fore.RED  # Red for SYN floods
-        elif 'ping_flood' in detected_attacks:
-            status_color = Fore.YELLOW  # Yellow for ping floods
-        elif 'sql_injection' in detected_attacks:
-            status_color = Fore.CYAN  # Cyan for SQL injection
-        elif 'malformed_packets' in detected_attacks:
-            status_color = Fore.BLUE  # Blue for malformed packets
-        elif 'large_packets' in detected_attacks:
-            status_color = Fore.LIGHTRED_EX  # Light red for large packets
-        else:
-            status_color = Fore.RED  # Default anomaly color
-
-    # Format attack types for display
-    attack_str = f"[{', '.join(detected_attacks)}]" if detected_attacks else "None"
     
-    # Enhanced packet information display
-    port_info = ""
-    if TCP in packet:
-        port_info = f":{packet[TCP].sport} > :{packet[TCP].dport}"
-    elif UDP in packet:
-        port_info = f":{packet[UDP].sport} > :{packet[UDP].dport}"
-
+    if ml_detected:
+        # Using different colors for different attack types
+        if "Port Scan" in attack_type:
+            status_color = Fore.MAGENTA
+        elif "Ping Flood" in attack_type:
+            status_color = Fore.RED
+        elif "Malformed" in attack_type:
+            status_color = Fore.BLUE
+        else:
+            status_color = Fore.LIGHTYELLOW_EX
+    
     # Print packet information with enhanced formatting
     print(status_color + 
-          f"[+] {timestamp} | {src_ip}{port_info} -> {dst_ip} | "
-          f"Protocol: {protocol} | Length: {packet_length} bytes | "
-          f"Attack Types: {attack_str} | "
-          f"Info: {packet_info}" + 
+          f"[+] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+          f"{packet[IP].src}{get_port_info(packet)} -> {packet[IP].dst} | "
+          f"Protocol: {protocol} | Length: {len(packet)} bytes | "
+          f"Attack: {attack_str} | "
+          f"Info: {packet.summary()}" + 
           Style.RESET_ALL)
 
-def save_captured_packets(output_pcap="traffic_capture.pcap", output_json="traffic_capture.json"):
-    """
-    Save captured packets to PCAP and JSON files with enhanced attack information.
-    """
+def get_port_info(packet):
+    """Extract port information from the packet"""
+    if TCP in packet:
+        return f":{packet[TCP].sport} > :{packet[TCP].dport}"
+    elif UDP in packet:
+        return f":{packet[UDP].sport} > :{packet[UDP].dport}"
+    return ""
+
+def save_captured_packets(output_pcap="traffic_capture.pcap", output_csv="traffic_capture.csv"):
+    """Save captured packets to PCAP and CSV files with NSL-KDD features."""
     try:
-        # Extract packets and their anomaly status
-        valid_packets = [(pkt, bool(anomaly), attacks) for pkt, anomaly, attacks in captured_packets if pkt is not None]
+        # Extract packets, features, and detection results
+        valid_entries = [(pkt, features, detection) for pkt, features, detection in captured_packets 
+                        if pkt is not None and features is not None]
         
-        if valid_packets:
+        if valid_entries:
             # Save PCAP file
             print(Fore.GREEN + f"Saving to {output_pcap}..." + Style.RESET_ALL)
-            wrpcap(output_pcap, [pkt for pkt, _, _ in valid_packets])
+            wrpcap(output_pcap, [pkt for pkt, _, _ in valid_entries])
             
-            # Save JSON file with enhanced attack information
-            print(Fore.GREEN + f"Saving to {output_json}..." + Style.RESET_ALL)
-            json_data = [packet_to_dict(pkt, anomaly, attacks) for pkt, anomaly, attacks in valid_packets]
+            # Save CSV file with NSL-KDD features
+            print(Fore.GREEN + f"Saving to {output_csv}..." + Style.RESET_ALL)
             
-            with open(output_json, 'w') as json_file:
-                json.dump(json_data, json_file, default=str)
+            # Create a list of features with detection results
+            features_list = []
+            for _, features, detection in valid_entries:
+                # Add detection results to features
+                features_with_detection = features.copy()
+                features_with_detection['anomaly'] = 1 if detection['is_anomaly'] else 0
+                features_with_detection['class'] = 'attack' if detection['is_anomaly'] else 'normal'
+                
+                # Add detailed detection information
+                features_with_detection['ml_confidence'] = detection['ml_confidence']
+                features_with_detection['attack_type'] = detection['attack_type']
+                
+                features_list.append(features_with_detection)
+            
+            # Create DataFrame and save to CSV
+            if features_list:
+                df = pd.DataFrame(features_list)
+                df.to_csv(output_csv, index=False)
+            else:
+                print(Fore.YELLOW + "No valid features to save." + Style.RESET_ALL)
         else:
             print(Fore.YELLOW + "No valid packets to save." + Style.RESET_ALL)
-            with open(output_json, 'w') as json_file:
-                json.dump([], json_file)
         
         logging.info("Captured packets saved successfully.")
     except Exception as e:
         logging.error(f"Failed to save captured packets: {e}")
         raise
 
-def packet_to_dict(packet, anomaly_status, detected_attacks):
+def packet_to_dict(packet, features, detection_result):
     """
-    Convert a packet to a dictionary format with enhanced attack information.
-    
-    Parameters:
-    packet: scapy packet object
-    anomaly_status: boolean indicating if the packet is anomalous
-    detected_attacks: list of detected attack types
-    
-    Returns:
-    dict: Dictionary containing packet information with attack details
+    Convert a packet to a dictionary format with detection information.
     """
     # Basic packet validation
     if IP not in packet:
@@ -246,7 +380,8 @@ def packet_to_dict(packet, anomaly_status, detected_attacks):
             "info": packet.summary(),
             "timestamp": datetime.now().timestamp(),
             "anomaly": False,
-            "attack_types": []
+            "ml_confidence": 0.0,
+            "attack_type": "None"
         }
     
     # Extract protocol information
@@ -280,9 +415,16 @@ def packet_to_dict(packet, anomaly_status, detected_attacks):
         "length": len(packet),
         "info": packet.summary(),
         "timestamp": datetime.now().timestamp(),
-        "anomaly": bool(anomaly_status),
-        "attack_types": detected_attacks if detected_attacks else []
+        "anomaly": detection_result['is_anomaly'],
+        "ml_confidence": detection_result['ml_confidence'],
+        "attack_type": detection_result['attack_type']
     }
+    
+    # Add key NSL-KDD features
+    for key in ['duration', 'src_bytes', 'dst_bytes', 'count', 'serror_rate', 'rerror_rate', 
+               'same_srv_rate', 'diff_srv_rate', 'dst_host_count', 'dst_host_srv_count']:
+        if key in features:
+            packet_dict[key] = features[key]
     
     return packet_dict
 
@@ -368,6 +510,7 @@ def terminal_ui():
         os.system('clear')
         display_ascii_art()
         print(Fore.GREEN + "Welcome to the Network Traffic Analyser!\n" + Style.RESET_ALL)
+        print(Fore.CYAN + "Using Machine Learning mode only - no rule-based detection" + Style.RESET_ALL)
 
         # Display the menu with the current selection highlighted
         for i, option in enumerate(options):
