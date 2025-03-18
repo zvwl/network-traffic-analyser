@@ -497,6 +497,13 @@ def set_filter():
                     selected_packet_size_range = None
             elif options[current_selection] == "Remove Duplicates":  # Handle "Remove Duplicates"
                 remove_duplicates = not remove_duplicates
+                
+                if remove_duplicates:
+                    print(Fore.RED + "\nWARNING: Enabling 'Remove Duplicates' may reduce ML detection accuracy" + Style.RESET_ALL)
+                    print(Fore.RED + "The ML model uses duplicate packets to detect certain attack patterns like ping floods." + Style.RESET_ALL)
+                    print(Fore.YELLOW + "Press any key to continue..." + Style.RESET_ALL)
+                    get_keypress()  # Wait for user to accept warning
+                
             else:  # Protocol options (TCP, UDP, ICMP, etc.)
                 protocol = options[current_selection].lower()
                 selected_protocols[protocol] = not selected_protocols.get(protocol, False)

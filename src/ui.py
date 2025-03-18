@@ -90,14 +90,3 @@ def terminal_ui(train_model_callback=None, validate_data_callback=None, shared_s
                 print(Fore.GREEN + "Exiting program..." + Style.RESET_ALL)
                 from main import exit_program
                 exit_program()
-
-
-
-def display_traffic(traffic_data):
-    """Display traffic packets with anomaly detection"""
-    anomalies = detect_anomalies(traffic_data)
-    for idx, packet in enumerate(traffic_data):
-        if anomalies[idx]:
-            print(f"ANOMALY DETECTED: {packet}")
-        else:
-            print(f"Normal Packet: {packet}")

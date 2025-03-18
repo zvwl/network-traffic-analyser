@@ -43,7 +43,7 @@ class ModelLoader:
             logging.error(f"Failed to load model: {e}")
             return False
     
-    def predict(self, features_df, preprocess_func, confidence_threshold=0.63):
+    def predict(self, features_df, preprocess_func, confidence_threshold=0.62):
         """
         Make predictions with confidence threshold to reduce false positives
         
